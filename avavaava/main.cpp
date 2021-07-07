@@ -1,7 +1,11 @@
+// #include <vector>
+// #include <stdio.h>
 // #include <iostream>
-// #include <sys/time.h>
-// #include "time_stamp.hpp"
 // #include <thread>
+// #include <memory>
+// #include <thread>
+// #include "exception.hpp"
+// #include "time_stamp.hpp"
 
 // class Timer {
 // private:
@@ -18,122 +22,124 @@
 //     void Mark() { now = std::chrono::steady_clock::now(); }
 // };
 
+// class Base : public std::enable_shared_from_this<Base> {
+// public:
+//     Base() { std::cout << "Base cons\n"; }
+//     template <class T>
+//     auto ptr_cast()
+//     {
+//         return std::static_pointer_cast<T>(shared_from_this());
+//     }
+//     virtual void Print() = 0;
+//     virtual ~Base() { std::cout << "Base des\n"; }
+// };
+
+// class Entity : public Base {
+// public:
+//     Entity() { std::cout << "Entity cons\n"; }
+//     void Print() override { std::cout << "Entity\n"; }
+//     void EntityFunc() { std::cout << x << "\n"; }
+//     ~Entity() { std::cout << "Entity des\n"; }
+//     int x = 1;
+// };
+
+// template <class To, class From>
+// To Func(From f)
+// {
+//     return (To)f;
+// }
+
+// class Home : public Base {
+// public:
+//     Home() { std::cout << "Home cons\n"; }
+//     void Print() override { std::cout << "Home\n"; }
+//     void HomeFunc() { std::cout << x << "\n"; }
+//     ~Home() { std::cout << "Home des\n"; }
+//     int x = 100;
+// };
+
+// std::vector<std::shared_ptr<Base>> vec;
+
+// void Fn()
+// {
+//     throw ava::Exception("haha");
+// }
+
+// void Func()
+// {
+//     Fn();
+// }
 
 // int main()
 // {
-//     using namespace std::chrono_literals;
-//     ava::TimeStamp time1;
-//     std::this_thread::sleep_for(2s);
-//     ava::TimeStamp time2;
-//     std::cout << ava::TimeDifference(time2, time1) << std::endl;
+//     try
+//     {
+//         Func();
+//     }
+//     catch (const ava::Exception& except)
+//     {
+//         std::cout << "reason: " << except.what() << std::endl;
+//         std::cout << "stack trace:\n"
+//                   << except.StackTrace();
+//     }
+//     catch (...)
+//     {
+//         std::cout << "unknown exception\n";
+//     }
+//     // vec.push_back(std::make_shared<Home>());
+
+//     // Timer time;
+//     // for (int i = 0; i < 10000000; i++)
+//     //     auto res = vec[0]->ptr_cast<Home>();
+//     // time.Print();
 // }
 
 
-#include "muduo/base/Timestamp.h"
+
+#include <functional>
 #include <vector>
 #include <stdio.h>
-#include <iostream>
-#include "time_stamp.hpp"
+#include "exception.hpp"
 
-using muduo::Timestamp;
+class Bar {
+public:
+    void test(std::vector<std::string> names = {})
+    {
+        printf("Stack:\n%s\n", ava::this_thrd::StackTrace().c_str());
+        [] {
+            printf("Stack inside lambda:\n%s\n", ava::this_thrd::StackTrace().c_str());
+        }();
+        std::function<void()> func([] { printf("Stack inside std::function:\n%s\n", ava::this_thrd::StackTrace().c_str()); });
+        func();
 
-void passByConstReference(const Timestamp& x)
+        func = std::bind(&Bar::callback, this);
+        func();
+
+        throw ava::Exception("oops");
+    }
+
+private:
+    void callback()
+    {
+        printf("Stack inside std::bind:\n%s\n", ava::this_thrd::StackTrace().c_str());
+    }
+};
+
+void foo()
 {
-    printf("%s\n", x.toString().c_str());
-}
-
-void passByValue(Timestamp x)
-{
-    printf("%s\n", x.toString().c_str());
-}
-
-void benchmark()
-{
-    const int kNumber = 1000 * 1000;
-
-    std::vector<Timestamp> stamps;
-    stamps.reserve(kNumber);
-    for (int i = 0; i < kNumber; ++i)
-    {
-        stamps.push_back(Timestamp::now());
-    }
-    printf("%s\n", stamps.front().toString().c_str());
-    printf("%s\n", stamps.back().toString().c_str());
-    printf("%f\n", timeDifference(stamps.back(), stamps.front()));
-
-    int increments[100] = {0};
-    int64_t start = stamps.front().microSecondsSinceEpoch();
-    for (int i = 1; i < kNumber; ++i)
-    {
-        int64_t next = stamps[i].microSecondsSinceEpoch();
-        int64_t inc = next - start;
-        start = next;
-        if (inc < 0)
-        {
-            printf("reverse!\n");
-        }
-        else if (inc < 100)
-        {
-            ++increments[inc];
-        }
-        else
-        {
-            printf("big gap %d\n", static_cast<int>(inc));
-        }
-    }
-
-    for (int i = 0; i < 100; ++i)
-    {
-        printf("%2d: %d\n", i, increments[i]);
-    }
-}
-
-void Func()
-{
-    const int kNumber = 1000 * 1000;
-
-    std::vector<ava::TimeStamp> stamps;
-    stamps.reserve(kNumber);
-    for (int i = 0; i < kNumber; ++i)
-    {
-        stamps.push_back(ava::TimeStamp::now());
-    }
-    printf("%f\n", ava::TimeDifference(stamps.back(), stamps.front()));
-
-    int increments[100] = {0};
-    int64_t start = stamps.front().usSinceEpoch();
-    for (int i = 1; i < kNumber; ++i)
-    {
-        int64_t next = stamps[i].usSinceEpoch();
-        int64_t inc = next - start;
-        start = next;
-        if (inc < 0)
-        {
-            printf("reverse!\n");
-        }
-        else if (inc < 100)
-        {
-            ++increments[inc];
-        }
-        else
-        {
-            printf("big gap %d\n", static_cast<int>(inc));
-        }
-    }
-
-    for (int i = 0; i < 100; ++i)
-    {
-        printf("%2d: %d\n", i, increments[i]);
-    }
+    Bar b;
+    b.test();
 }
 
 int main()
 {
-    // Timestamp now(Timestamp::now());
-    // printf("%s\n", now.toString().c_str());
-    // passByValue(now);
-    // passByConstReference(now);
-    benchmark();
-    std::cout << "-----------------------------\n";
-    Func();
+    try
+    {
+        foo();
+    }
+    catch (const ava::Exception& ex)
+    {
+        printf("reason: %s\n", ex.what());
+        printf("stack trace:\n%s\n", ex.StackTrace());
+    }
 }
