@@ -76,7 +76,8 @@
         "coroutine": "cpp",
         "ranges": "cpp",
         "stop_token": "cpp",
-        "valarray": "cpp"
+        "valarray": "cpp",
+        "*.ipp": "cpp"
     },
     "sqltools.connections": [
         {

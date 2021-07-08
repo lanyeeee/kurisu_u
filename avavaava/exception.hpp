@@ -1,5 +1,7 @@
+#pragma once
 #include <exception>
 #include "this_thrd.hpp"
+
 
 namespace ava {
     class Exception : public std::exception {

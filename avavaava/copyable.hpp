@@ -1,16 +1,18 @@
 #pragma once
-class copyable {
-protected:
-    copyable() = default;
-    ~copyable() = default;
-};
+namespace ava {
+    class copyable {
+    protected:
+        copyable() = default;
+        ~copyable() = default;
+    };
 
-class nocopyable {
-protected:
-    nocopyable(){};
-    ~nocopyable(){};
+    class nocopyable {
+    protected:
+        nocopyable(){};
+        ~nocopyable(){};
 
-private:
-    nocopyable(const nocopyable& that);
-    nocopyable& operator=(const nocopyable& that);
-};
+    private:
+        nocopyable(const nocopyable& that);
+        nocopyable& operator=(const nocopyable& that);
+    };
+}  // namespace ava

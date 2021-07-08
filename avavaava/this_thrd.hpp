@@ -1,12 +1,16 @@
+#pragma once
 #include <string>
 #include <string.h>
 #include <execinfo.h>
 #include <cxxabi.h>
 #include <iostream>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 namespace ava {
     namespace this_thrd {
         namespace detail {
+            inline pid_t gettid() { return (pid_t)syscall(SYS_gettid); }
             inline std::string Demangle(const char* symbol)
             {
                 uint64_t size;
@@ -24,7 +28,7 @@ namespace ava {
 
                 if (*right == '+')
                 {
-                    memcpy(buf, left, right - left);
+                    memcpy(buf, left, (uint64_t)(right - left));
                     if (demangled = abi::__cxa_demangle(buf, NULL, &size, &status); demangled != nullptr)  //解析成功
                     {
                         std::string res(symbol, left);
@@ -38,6 +42,26 @@ namespace ava {
                 return symbol;
             }
         }  // namespace detail
+
+        inline __thread int t_cachedTid;  //tid的缓存，提高效率(不用每次都调用系统函数)
+        inline __thread char t_tidString[32];
+        inline __thread int t_tidStringLength;
+        inline __thread const char* t_threadName;
+
+        inline void cacheTid()
+        {
+            if (t_cachedTid == 0)
+            {
+                t_cachedTid = detail::gettid();
+                t_tidStringLength = snprintf(t_tidString, sizeof(t_tidString), "%5d ", t_cachedTid);
+            }
+        }
+        inline int tid()
+        {
+            if (t_cachedTid == 0)
+                cacheTid();
+            return t_cachedTid;
+        }
         inline std::string StackTrace()
         {
             std::string stack;
