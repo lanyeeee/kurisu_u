@@ -5,6 +5,7 @@
 
 
 namespace kurisu {
+    //门闩
     class CountDownLatch : nocopyable {
     public:
         explicit CountDownLatch(int count) : m_count(count) {}
@@ -26,7 +27,7 @@ namespace kurisu {
     }
     inline void CountDownLatch::CountDown()
     {
-        std::unique_lock locker(m_mu);
+        std::lock_guard locker(m_mu);
         m_count--;
         if (m_count == 0)
             m_cond.notify_all();
@@ -37,4 +38,4 @@ namespace kurisu {
         return m_count;
     }
 
-}  // namespace ava
+}  // namespace kurisu

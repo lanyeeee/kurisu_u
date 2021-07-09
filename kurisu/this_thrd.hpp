@@ -6,6 +6,9 @@
 #include <iostream>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <thread>
+#include <chrono>
+#include <pthread.h>
 
 namespace kurisu {
     namespace this_thrd {
@@ -62,6 +65,11 @@ namespace kurisu {
                 cacheTid();
             return t_cachedTid;
         }
+        inline const char* TidString() { return t_tidString; }
+        inline const char* name() { return t_threadName; }
+
+        inline bool IsMainThread() { return tid() == getpid(); }
+        inline void SleepFor(int us) { std::this_thread::sleep_for(std::chrono::microseconds(us)); }
         inline std::string StackTrace()
         {
             std::string stack;
@@ -83,6 +91,17 @@ namespace kurisu {
             }
             return stack;
         }
-
+        namespace detail {
+            inline char mainThreadInit = [] {
+                t_threadName = "main";
+                cacheTid();
+                pthread_atfork(NULL, NULL, [] {
+                    t_threadName = "main";
+                    t_cachedTid = 0;
+                    cacheTid();
+                });
+                return (char)0;
+            }();
+        }
     }  // namespace this_thrd
 }  // namespace kurisu

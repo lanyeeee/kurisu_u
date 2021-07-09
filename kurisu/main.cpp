@@ -7,7 +7,12 @@
 #include <muduo/base/noncopyable.h>
 #include <muduo/base/Thread.h>
 #include <muduo/base/CurrentThread.h>
+#include "boost/ptr_container/ptr_vector.hpp"
 #include "thrd.hpp"
+#include <unistd.h>
+#include <algorithm>
+#include <pthread.h>
+#include "blocking_queue.hpp"
 
 class Timer {
 private:
@@ -24,18 +29,49 @@ public:
     void Mark() { now = std::chrono::steady_clock::now(); }
 };
 
-int Func(int x) { return x; }
+
+class Test {
+public:
+    Test(int thrdNum) : latch(1), num(thrdNum)
+    {
+        for (int i = 0; i < num; i++)
+            vec.push_back(new kurisu::Thread(std::bind(&Test::Func, this), std::to_string(i)));
+        for (auto&& item : vec)
+            item.start();
+    }
+    void Run() { latch.CountDown(); }
+    void JoinAll() { std::for_each(vec.begin(), vec.end(), std::bind(&kurisu::Thread::join, std::placeholders::_1)); }
+
+private:
+    void Func()
+    {
+        latch.wait();
+        printf("tid=%d, %s started\n", kurisu::this_thrd::tid(), kurisu::this_thrd::name());
+        printf("tid=%d, %s stoped\n", kurisu::this_thrd::tid(), kurisu::this_thrd::name());
+    }
+
+    kurisu::CountDownLatch latch;
+    int num;
+    boost::ptr_vector<kurisu::Thread> vec;
+};
+
+kurisu::BlockingQueue<int> que;
+
+void Fn()
+{
+    kurisu::this_thrd::SleepFor(1'000'000);
+    que.push(1);
+}
+
 int main()
 {
     Timer time;
-
-    for (int i = 0; i < 10000; i++)
-    {
-        auto res = muduo::Thread(std::bind(Func, 1));
-        res.start();
-    }
-
-    // for (auto&& item : vec)
-    //     item.join();
+    kurisu::Thread thrd(Fn);
+    thrd.start();
+    que.push(1);
+    int i = que.take();
+    std::cout << i << std::endl;
+    que.pop();
+    std::cout << "done\n";
     time.Print();
 }
