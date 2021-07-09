@@ -1,5 +1,5 @@
 #pragma once
-namespace ava {
+namespace kurisu {
     class copyable {
     protected:
         copyable() = default;

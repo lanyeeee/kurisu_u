@@ -7,7 +7,7 @@
 #include "exception.hpp"
 
 
-namespace ava {
+namespace kurisu {
     namespace detail {
         class ThreadData {
         public:

@@ -7,7 +7,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-namespace ava {
+namespace kurisu {
     namespace this_thrd {
         namespace detail {
             inline pid_t gettid() { return (pid_t)syscall(SYS_gettid); }
@@ -85,4 +85,4 @@ namespace ava {
         }
 
     }  // namespace this_thrd
-}  // namespace ava
+}  // namespace kurisu

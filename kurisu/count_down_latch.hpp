@@ -4,7 +4,7 @@
 #include "copyable.hpp"
 
 
-namespace ava {
+namespace kurisu {
     class CountDownLatch : nocopyable {
     public:
         explicit CountDownLatch(int count) : m_count(count) {}

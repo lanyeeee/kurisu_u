@@ -4,7 +4,7 @@
 #include <chrono>
 #include <fmt/chrono.h>
 
-namespace ava {
+namespace kurisu {
     class TimeStamp : copyable,
                       public boost::less_than_comparable<TimeStamp>,
                       public boost::equality_comparable<TimeStamp> {

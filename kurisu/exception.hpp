@@ -3,10 +3,10 @@
 #include "this_thrd.hpp"
 
 
-namespace ava {
+namespace kurisu {
     class Exception : public std::exception {
     public:
-        Exception(std::string msg) : m_msg(std::move(msg)), m_stack(ava::this_thrd::StackTrace()) {}
+        Exception(std::string msg) : m_msg(std::move(msg)), m_stack(kurisu::this_thrd::StackTrace()) {}
         ~Exception() noexcept override = default;
 
         const char* what() const noexcept override { return m_msg.data(); }

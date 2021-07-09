@@ -13,7 +13,7 @@
 #include "thread_data.hpp"
 
 
-namespace ava {
+namespace kurisu {
     class Thread : nocopyable {
     public:
         using BindFunc = std::function<void()>;
