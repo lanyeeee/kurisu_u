@@ -7,12 +7,19 @@
 #include <muduo/base/noncopyable.h>
 #include <muduo/base/Thread.h>
 #include <muduo/base/CurrentThread.h>
-#include "boost/ptr_container/ptr_vector.hpp"
+#include <boost/ptr_container/ptr_vector.hpp>
 #include "thrd.hpp"
 #include <unistd.h>
 #include <algorithm>
 #include <pthread.h>
 #include "blocking_queue.hpp"
+#include <map>
+#include <string>
+#include <vector>
+#include <stdio.h>
+#include <unistd.h>
+#include "time_stamp.hpp"
+#include "blocking_circular_queue.hpp"
 
 class Timer {
 private:
@@ -29,49 +36,101 @@ public:
     void Mark() { now = std::chrono::steady_clock::now(); }
 };
 
-
 class Test {
 public:
-    Test(int thrdNum) : latch(1), num(thrdNum)
+    Test(int numThreads)
+        : queue_(20),
+          latch_(numThreads)
     {
-        for (int i = 0; i < num; i++)
-            vec.push_back(new kurisu::Thread(std::bind(&Test::Func, this), std::to_string(i)));
-        for (auto&& item : vec)
-            item.start();
+        threads_.reserve(numThreads);
+        for (int i = 0; i < numThreads; ++i)
+        {
+            char name[32];
+            snprintf(name, sizeof name, "work thread %d", i);
+            threads_.emplace_back(new kurisu::Thread(
+                std::bind(&Test::threadFunc, this), std::string(name)));
+        }
+        for (auto& thr : threads_)
+        {
+            thr->start();
+        }
     }
-    void Run() { latch.CountDown(); }
-    void JoinAll() { std::for_each(vec.begin(), vec.end(), std::bind(&kurisu::Thread::join, std::placeholders::_1)); }
+
+    void run(int times)
+    {
+        printf("waiting for count down latch\n");
+        latch_.wait();
+        printf("all threads started\n");
+        for (int i = 0; i < times; ++i)
+        {
+            char buf[32];
+            snprintf(buf, sizeof buf, "hello %d", i);
+            queue_.push(buf);
+            printf("tid=%d, put data = %s, size = %zd\n", kurisu::this_thrd::tid(), buf, queue_.size());
+        }
+    }
+
+    void joinAll()
+    {
+        for (size_t i = 0; i < threads_.size(); ++i)
+        {
+            queue_.push("stop");
+        }
+
+        for (auto& thr : threads_)
+        {
+            thr->join();
+        }
+    }
 
 private:
-    void Func()
+    void threadFunc()
     {
-        latch.wait();
-        printf("tid=%d, %s started\n", kurisu::this_thrd::tid(), kurisu::this_thrd::name());
-        printf("tid=%d, %s stoped\n", kurisu::this_thrd::tid(), kurisu::this_thrd::name());
+        printf("tid=%d, %s started\n",
+               kurisu::this_thrd::tid(),
+               kurisu::this_thrd::name());
+
+        latch_.CountDown();
+        bool running = true;
+        while (running)
+        {
+            std::string d(queue_.take());
+            printf("tid=%d, get data = %s, size = %zd\n", kurisu::this_thrd::tid(), d.c_str(), queue_.size());
+            running = (d != "stop");
+        }
+
+        printf("tid=%d, %s stopped\n",
+               kurisu::this_thrd::tid(),
+               kurisu::this_thrd::name());
     }
 
-    kurisu::CountDownLatch latch;
-    int num;
-    boost::ptr_vector<kurisu::Thread> vec;
+    kurisu::BlockingCircularQueue<std::string> queue_;
+    kurisu::CountDownLatch latch_;
+    std::vector<std::unique_ptr<kurisu::Thread>> threads_;
 };
 
-kurisu::BlockingQueue<int> que;
-
-void Fn()
+void testMove()
 {
-    kurisu::this_thrd::SleepFor(1'000'000);
-    que.push(1);
+#if BOOST_VERSION >= 105500L
+    kurisu::BlockingCircularQueue<std::unique_ptr<int>> queue(10);
+    queue.push(std::unique_ptr<int>(new int(42)));
+    std::unique_ptr<int> x = queue.take();
+    printf("took %d\n", *x);
+    *x = 123;
+    queue.push(std::move(x));
+    std::unique_ptr<int> y;
+    y = queue.take();
+    printf("took %d\n", *y);
+#endif
 }
 
 int main()
 {
-    Timer time;
-    kurisu::Thread thrd(Fn);
-    thrd.start();
-    que.push(1);
-    int i = que.take();
-    std::cout << i << std::endl;
-    que.pop();
-    std::cout << "done\n";
-    time.Print();
+    printf("pid=%d, tid=%d\n", ::getpid(), kurisu::this_thrd::tid());
+    testMove();
+    Test t(5);
+    t.run(100);
+    t.joinAll();
+
+    printf("number of created threads %d\n", kurisu::Thread::numCreated());
 }

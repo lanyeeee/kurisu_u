@@ -9,17 +9,24 @@ namespace kurisu {
     class BlockingQueue : nocopyable {
     public:
         BlockingQueue() {}
-        void push(const T&);
-        void push(T&&);
+        void push(const T& t);
+        void push(T&& t);
         void pop();
         T take();
-        uint64_t size() const { return m_deque.size(); }
+        uint64_t size() const
+        {
+            std::lock_guard locker(m_mu);
+            return m_deque.size();
+        }
 
     private:
         mutable std::mutex m_mu;
         std::condition_variable m_cond;
         std::deque<T> m_deque;
     };
+
+
+
     template <class T>
     inline void BlockingQueue<T>::push(const T& t)
     {
@@ -27,6 +34,7 @@ namespace kurisu {
         m_deque.push_back(t);
         m_cond.notify_one();
     }
+
     template <class T>
     inline void BlockingQueue<T>::push(T&& t)
     {
@@ -36,6 +44,7 @@ namespace kurisu {
         }
         m_cond.notify_one();
     }
+
     template <class T>
     inline T BlockingQueue<T>::take()
     {
@@ -46,6 +55,7 @@ namespace kurisu {
         m_deque.pop_front();
         return front;
     }
+
     template <class T>
     inline void BlockingQueue<T>::pop()
     {

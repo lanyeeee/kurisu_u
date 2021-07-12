@@ -1,50 +1,53 @@
 #pragma once
-#include "copyable.hpp"
-#include "boost/operators.hpp"
+#include <boost/operators.hpp>
 #include <chrono>
 #include <fmt/chrono.h>
+#include "copyable.hpp"
 
 namespace kurisu {
-    class TimeStamp : copyable,
-                      public boost::less_than_comparable<TimeStamp>,
-                      public boost::equality_comparable<TimeStamp> {
+    class Timestamp : copyable,
+                      public boost::less_than_comparable<Timestamp>,
+                      public boost::equality_comparable<Timestamp> {
     public:
-        TimeStamp() : m_stamp(std::chrono::system_clock::now()) {}
-        explicit TimeStamp(std::chrono::system_clock::time_point stamp) : m_stamp(stamp) {}
+        Timestamp() : m_stamp(std::chrono::system_clock::now()) {}
+        explicit Timestamp(std::chrono::system_clock::time_point stamp) : m_stamp(stamp) {}
 
         auto GetStamp() const { return m_stamp; }
-        void swap(TimeStamp& other) { std::swap(m_stamp, other.m_stamp); }
+        void swap(Timestamp& other) { std::swap(m_stamp, other.m_stamp); }
+        bool valid() { return m_stamp != m_invalid; }
         std::string FormatString();
         int64_t usSinceEpoch();
         int64_t secondsSinceEpoch();
 
-        static TimeStamp now();
+        static Timestamp now() { return Timestamp(std::chrono::system_clock::now()); }
+        static Timestamp invalid() { return Timestamp(m_invalid); }
 
     private:
+        static std::chrono::system_clock::time_point m_invalid;
         std::chrono::system_clock::time_point m_stamp;
     };
+    inline std::chrono::system_clock::time_point Timestamp::m_invalid;
 
-    inline std::string TimeStamp::FormatString() { return fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt::localtime(m_stamp)); }
-    inline TimeStamp TimeStamp::now() { return TimeStamp(std::chrono::system_clock::now()); }
-    inline bool operator<(TimeStamp& a, TimeStamp& b) { return a.GetStamp() < b.GetStamp(); }
-    inline bool operator==(TimeStamp& a, TimeStamp& b) { return a.GetStamp() == b.GetStamp(); }
-    inline int64_t TimeStamp::usSinceEpoch()
+    inline std::string Timestamp::FormatString() { return fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt::localtime(m_stamp)); }
+    inline bool operator<(Timestamp& a, Timestamp& b) { return a.GetStamp() < b.GetStamp(); }
+    inline bool operator==(Timestamp& a, Timestamp& b) { return a.GetStamp() == b.GetStamp(); }
+    inline int64_t Timestamp::usSinceEpoch()
     {
         using namespace std::chrono;
         return duration_cast<microseconds>(m_stamp.time_since_epoch()).count();
     }
-    inline int64_t TimeStamp::secondsSinceEpoch()
+    inline int64_t Timestamp::secondsSinceEpoch()
     {
         using namespace std::chrono;
         return duration_cast<seconds>(m_stamp.time_since_epoch()).count();
     }
 
     //seconds
-    inline double TimeDifference(TimeStamp high, TimeStamp low)
+    inline double TimeDifference(Timestamp high, Timestamp low)
     {
         using namespace std::chrono;
         auto a = duration_cast<microseconds>(high.GetStamp().time_since_epoch()).count();
         auto b = duration_cast<microseconds>(low.GetStamp().time_since_epoch()).count();
         return (double)(a - b) / 1'000'000;
     }
-}  // namespace ava
+}  // namespace kurisu
