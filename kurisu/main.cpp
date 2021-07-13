@@ -13,14 +13,12 @@
 #include <unistd.h>
 #include <algorithm>
 #include <pthread.h>
-#include "blocking_queue.hpp"
 #include <map>
 #include <string>
 #include <vector>
 #include <stdio.h>
 #include <unistd.h>
 #include "time_stamp.hpp"
-#include "blocking_circular_queue.hpp"
 #include "thrd_pool.hpp"
 
 class Timer {
