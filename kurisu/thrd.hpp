@@ -44,13 +44,13 @@ namespace kurisu {
         std::thread m_thrd;
         static std::atomic_int32_t createdNum;
     };
-    std::atomic_int32_t Thread::createdNum = 0;
-    Thread::~Thread()
+    inline std::atomic_int32_t Thread::createdNum = 0;
+    inline Thread::~Thread()
     {
         if (m_started && m_thrd.joinable())
             m_thrd.detach();
     }
-    void Thread::SetDefaultName()
+    inline void Thread::SetDefaultName()
     {
         ++createdNum;
         if (m_name.empty())
@@ -66,8 +66,4 @@ namespace kurisu {
         m_latch.wait();  //TODO  why?
     }
 
-    namespace detail {
-
-
-    }  // namespace detail
-}  // namespace ava
+}  // namespace kurisu

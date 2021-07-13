@@ -5,7 +5,7 @@
 
 namespace kurisu {
     template <class T>
-    class BlockingCircularQueue {
+    class BlockingCircularQueue : nocopyable {
     public:
         explicit BlockingCircularQueue(int maxSize) : m_circle(maxSize) {}
         void push(const T& t);
@@ -31,7 +31,7 @@ namespace kurisu {
         std::unique_lock locker(m_mu);
         if (m_circle.full())
             m_notFullCond.wait(locker, [this] { return !m_circle.full(); });
-        m_circle.push_back(t);
+        m_circle.emplace_back(t);
         m_notEmptyCond.notify_one();
     }
 
@@ -41,7 +41,7 @@ namespace kurisu {
         std::unique_lock locker(m_mu);
         if (m_circle.full())
             m_notFullCond.wait(locker, [this] { return !m_circle.full(); });
-        m_circle.push_back(std::move(t));
+        m_circle.emplace_back(std::move(t));
         m_notEmptyCond.notify_one();
     }
 

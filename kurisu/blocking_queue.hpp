@@ -31,7 +31,7 @@ namespace kurisu {
     inline void BlockingQueue<T>::push(const T& t)
     {
         std::lock_guard locker(m_mu);
-        m_deque.push_back(t);
+        m_deque.emplace_back(t);
         m_cond.notify_one();
     }
 
@@ -40,7 +40,7 @@ namespace kurisu {
     {
         {
             std::lock_guard locker(m_mu);
-            m_deque.push_back(std::move(t));
+            m_deque.emplace_back(std::move(t));
         }
         m_cond.notify_one();
     }
