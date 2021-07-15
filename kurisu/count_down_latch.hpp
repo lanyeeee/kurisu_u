@@ -6,7 +6,7 @@
 
 namespace kurisu {
     //门闩
-    class CountDownLatch : nocopyable {
+    class CountDownLatch : uncopyable {
     public:
         explicit CountDownLatch(int count) : m_count(count) {}
 

@@ -9,7 +9,7 @@
 #include <fmt/format.h>
 
 namespace kurisu {
-    class ThreadPool : nocopyable {
+    class ThreadPool : uncopyable {
     public:
         using BindFunc = std::function<void()>;
         explicit ThreadPool(const std::string& name = "ThreadPool") : m_name(name) {}

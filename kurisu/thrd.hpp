@@ -14,7 +14,7 @@
 
 
 namespace kurisu {
-    class Thread : nocopyable {
+    class Thread : uncopyable {
     public:
         using BindFunc = std::function<void()>;
         explicit Thread(BindFunc func, const std::string& name = std::string())

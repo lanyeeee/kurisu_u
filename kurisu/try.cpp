@@ -5,3 +5,4 @@
 #include "thrd.hpp"
 #include "count_down_latch.hpp"
 #include "thread_data.hpp"
+#include "log_stream.hpp"

@@ -6,13 +6,13 @@ namespace kurisu {
         ~copyable() = default;
     };
 
-    class nocopyable {
+    class uncopyable {
     protected:
-        nocopyable(){};
-        ~nocopyable(){};
+        uncopyable(){};
+        ~uncopyable(){};
 
     private:
-        nocopyable(const nocopyable& that);
-        nocopyable& operator=(const nocopyable& that);
+        uncopyable(const uncopyable& that);
+        uncopyable& operator=(const uncopyable& that);
     };
-}  // namespace ava
+}  // namespace kurisu

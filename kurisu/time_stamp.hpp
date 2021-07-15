@@ -28,9 +28,14 @@ namespace kurisu {
     };
     inline std::chrono::system_clock::time_point Timestamp::m_invalid;
 
-    inline std::string Timestamp::FormatString() { return fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt::localtime(m_stamp)); }
     inline bool operator<(Timestamp& a, Timestamp& b) { return a.GetStamp() < b.GetStamp(); }
     inline bool operator==(Timestamp& a, Timestamp& b) { return a.GetStamp() == b.GetStamp(); }
+    inline std::string Timestamp::FormatString()
+    {
+        char buf[64];
+        fmt::format_to(buf, "{:%Y-%m-%d %H:%M:%S}", fmt::localtime(m_stamp));
+        return buf;
+    }
     inline int64_t Timestamp::usSinceEpoch()
     {
         using namespace std::chrono;
