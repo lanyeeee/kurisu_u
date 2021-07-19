@@ -1,8 +1,8 @@
 #pragma once
+#include "detail/copyable.hpp"
 #include <boost/operators.hpp>
 #include <chrono>
 #include <fmt/chrono.h>
-#include "copyable.hpp"
 
 namespace kurisu {
     class Timestamp : copyable,
@@ -15,9 +15,16 @@ namespace kurisu {
         auto GetStamp() const { return m_stamp; }
         void swap(Timestamp& other) { std::swap(m_stamp, other.m_stamp); }
         bool valid() { return m_stamp != m_invalid; }
-        std::string FormatString();
-        int64_t usSinceEpoch();
-        int64_t secondsSinceEpoch();
+        char* GmLogFormat(char* buf) const { return fmt::format_to(buf, "{:%F %T} ", fmt::gmtime(m_stamp)); }
+        char* LocalLogFormat(char* buf) const { return fmt::format_to(buf, "{:%F %T} ", fmt::localtime(m_stamp)); }
+        //format gmtime
+        std::string GmFormatString() const { return fmt::format("{:%F %T}", fmt::gmtime(m_stamp)); }
+        //format localtime
+        std::string LocalFormatString() const { return fmt::format("{:%F %T}", fmt::localtime(m_stamp)); }
+        int64_t usSinceEpoch() const;
+        int64_t nsSinceEpoch() const;
+        int64_t secondsSinceEpoch() const;
+        time_t as_time_t() { return (time_t)secondsSinceEpoch(); }
 
         static Timestamp now() { return Timestamp(std::chrono::system_clock::now()); }
         static Timestamp invalid() { return Timestamp(m_invalid); }
@@ -30,18 +37,17 @@ namespace kurisu {
 
     inline bool operator<(Timestamp& a, Timestamp& b) { return a.GetStamp() < b.GetStamp(); }
     inline bool operator==(Timestamp& a, Timestamp& b) { return a.GetStamp() == b.GetStamp(); }
-    inline std::string Timestamp::FormatString()
-    {
-        char buf[64];
-        fmt::format_to(buf, "{:%Y-%m-%d %H:%M:%S}", fmt::localtime(m_stamp));
-        return buf;
-    }
-    inline int64_t Timestamp::usSinceEpoch()
+    inline int64_t Timestamp::usSinceEpoch() const
     {
         using namespace std::chrono;
         return duration_cast<microseconds>(m_stamp.time_since_epoch()).count();
     }
-    inline int64_t Timestamp::secondsSinceEpoch()
+    inline int64_t Timestamp::nsSinceEpoch() const
+    {
+        using namespace std::chrono;
+        return duration_cast<nanoseconds>(m_stamp.time_since_epoch()).count();
+    }
+    inline int64_t Timestamp::secondsSinceEpoch() const
     {
         using namespace std::chrono;
         return duration_cast<seconds>(m_stamp.time_since_epoch()).count();

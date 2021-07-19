@@ -3,7 +3,6 @@
 #include <string.h>
 #include <execinfo.h>
 #include <cxxabi.h>
-#include <iostream>
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <thread>
@@ -66,6 +65,7 @@ namespace kurisu {
             return t_cachedTid;
         }
         inline const char* TidString() { return t_tidString; }
+        inline int TidStringLength() { return t_tidStringLength; }
         inline const char* name() { return t_threadName; }
 
         inline bool IsMainThread() { return tid() == getpid(); }
@@ -92,7 +92,7 @@ namespace kurisu {
             return stack;
         }
         namespace detail {
-            inline char mainThreadInit = [] {
+            inline bool mainThreadInit = [] {
                 t_threadName = "main";
                 cacheTid();
                 pthread_atfork(NULL, NULL, [] {
@@ -100,7 +100,7 @@ namespace kurisu {
                     t_cachedTid = 0;
                     cacheTid();
                 });
-                return (char)0;
+                return 0;
             }();
         }
     }  // namespace this_thrd

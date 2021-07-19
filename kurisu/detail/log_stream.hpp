@@ -3,8 +3,10 @@
 #include "fixed_buf.hpp"
 #include <fmt/format.h>
 #include <algorithm>
-namespace kurisu {
+#include "known_length_string.hpp"
 
+
+namespace kurisu {
     namespace detail {
         template <typename T>
         inline uint64_t convert(char buf[], T value)
@@ -53,7 +55,7 @@ namespace kurisu {
 
     class LogStream : uncopyable {
     public:
-        using Buf = detail::FixedBuf<detail::smallBuf>;
+        using Buf = detail::FixedBuf<detail::k_SmallBuf>;
 
         void append(const char* data, int len) { m_buf.append(data, len); }
         const Buf& buffer() const { return m_buf; }
@@ -75,6 +77,7 @@ namespace kurisu {
         LogStream& operator<<(const std::string& str);
         LogStream& operator<<(const std::string_view& str);
         LogStream& operator<<(const Buf& buf);
+        LogStream& operator<<(const KnownLengthString& str);
 
     private:
         template <class T>
@@ -82,7 +85,7 @@ namespace kurisu {
 
     private:
         Buf m_buf;
-        static const int maxSize = 32;
+        static const int k_MaxSize = 32;
     };
 
     inline LogStream& LogStream::operator<<(bool val)
@@ -132,7 +135,7 @@ namespace kurisu {
     }
     inline LogStream& LogStream::operator<<(double val)
     {
-        if (m_buf.AvalibleSize() >= maxSize)
+        if (m_buf.AvalibleSize() >= k_MaxSize)
         {
             auto ptr = fmt::format_to(m_buf.index(), "{:.12g}", val);
             uint64_t len = ptr - m_buf.index();
@@ -143,7 +146,7 @@ namespace kurisu {
     inline LogStream& LogStream::operator<<(const void* p)
     {
         uintptr_t val = (uintptr_t)p;
-        if (m_buf.AvalibleSize() >= maxSize)
+        if (m_buf.AvalibleSize() >= k_MaxSize)
         {
             char* buf = m_buf.index();
             buf[0] = '0';
@@ -181,11 +184,16 @@ namespace kurisu {
         *this << buf.StringView();
         return *this;
     }
+    inline LogStream& LogStream::operator<<(const KnownLengthString& str)
+    {
+        m_buf.append(str.buf, str.size);
+        return *this;
+    }
 
     template <class T>
     inline void LogStream::FormatInt(T val)
     {
-        if (m_buf.AvalibleSize() >= maxSize)
+        if (m_buf.AvalibleSize() >= k_MaxSize)
         {
             uint64_t len = detail::convert(m_buf.index(), val);
             m_buf.IndexMove(len);

@@ -8,10 +8,9 @@
 #include <fmt/format.h>
 #include <memory>
 #include "copyable.hpp"
-#include "exception.hpp"
+#include "../exception.hpp"
 #include "count_down_latch.hpp"
 #include "thread_data.hpp"
-
 
 namespace kurisu {
     class Thread : uncopyable {
@@ -30,7 +29,7 @@ namespace kurisu {
         pid_t tid() const { return m_tid; }
         const std::string& name() const { return m_name; }
 
-        static int numCreated() { return createdNum; }
+        static int numCreated() { return m_createdNum; }
 
     private:
         void SetDefaultName();
@@ -42,9 +41,9 @@ namespace kurisu {
         std::string m_name;
         CountDownLatch m_latch = CountDownLatch(1);
         std::thread m_thrd;
-        static std::atomic_int32_t createdNum;
+        static std::atomic_int32_t m_createdNum;
     };
-    inline std::atomic_int32_t Thread::createdNum = 0;
+    inline std::atomic_int32_t Thread::m_createdNum = 0;
     inline Thread::~Thread()
     {
         if (m_started && m_thrd.joinable())
@@ -52,9 +51,9 @@ namespace kurisu {
     }
     inline void Thread::SetDefaultName()
     {
-        ++createdNum;
+        ++m_createdNum;
         if (m_name.empty())
-            m_name = fmt::format("Thread{}", createdNum);
+            m_name = fmt::format("Thread{}", m_createdNum);
     }
     inline void Thread::start()
     {
@@ -63,7 +62,7 @@ namespace kurisu {
         auto thrdData = std::make_shared<ThreadData>(std::move(m_func), m_name, m_tid, m_latch);
         m_thrd = std::thread(ThrdEntrance, thrdData);
         m_pthreadID = m_thrd.native_handle();
-        m_latch.wait();  //TODO  why?
+        m_latch.wait();
     }
 
 }  // namespace kurisu

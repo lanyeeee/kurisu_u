@@ -1,7 +1,8 @@
 #pragma once
+#include "thrd.hpp"
+#include <atomic>
 #include <mutex>
 #include <condition_variable>
-#include "thrd.hpp"
 #include <deque>
 #include <vector>
 #include <functional>
@@ -36,7 +37,7 @@ namespace kurisu {
         BindFunc take();
 
     private:
-        bool m_running = 0;  //退出的标志
+        std::atomic_bool m_running = 0;  //退出的标志
         uint64_t m_maxSize = 0;
         std::string m_name;
         mutable std::mutex m_mu;

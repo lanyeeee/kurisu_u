@@ -1,6 +1,6 @@
 #pragma once
 #include <exception>
-#include "this_thrd.hpp"
+#include "detail/this_thrd.hpp"
 
 
 namespace kurisu {
@@ -17,4 +17,4 @@ namespace kurisu {
         std::string m_stack;
     };
 
-}  // namespace ava
+}  // namespace kurisu

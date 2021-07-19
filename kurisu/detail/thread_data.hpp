@@ -4,7 +4,7 @@
 #include <sys/prctl.h>
 #include "count_down_latch.hpp"
 #include "this_thrd.hpp"
-#include "exception.hpp"
+#include "../exception.hpp"
 
 
 namespace kurisu {
@@ -60,4 +60,4 @@ namespace kurisu {
         inline void ThrdEntrance(std::shared_ptr<ThreadData> thrdData) { thrdData->Run(); }
 
     }  // namespace detail
-}  // namespace ava
+}  // namespace kurisu

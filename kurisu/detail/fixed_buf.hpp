@@ -8,8 +8,8 @@
 namespace kurisu {
     namespace detail {
 
-        constexpr uint64_t smallBuf = 4'000;
-        constexpr uint64_t largeBuf = 4'000'000;
+        constexpr uint64_t k_SmallBuf = 4'000;
+        constexpr uint64_t k_LargeBuf = 4'000'000;
 
         template <uint64_t SIZE>
         class FixedBuf : uncopyable {
