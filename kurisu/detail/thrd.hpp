@@ -15,8 +15,7 @@
 namespace kurisu {
     class Thread : uncopyable {
     public:
-        using BindFunc = std::function<void()>;
-        explicit Thread(BindFunc func, const std::string& name = std::string())
+        explicit Thread(std::function<void()> func, const std::string& name = std::string())
             : m_func(std::move(func)), m_name(name) { SetDefaultName(); }
         // FIXME: make it movable in C++11
         ~Thread();
@@ -37,7 +36,7 @@ namespace kurisu {
         bool m_started = 0;
         pthread_t m_pthreadID = 0;
         pid_t m_tid = 0;
-        BindFunc m_func;
+        std::function<void()> m_func;
         std::string m_name;
         CountDownLatch m_latch = CountDownLatch(1);
         std::thread m_thrd;

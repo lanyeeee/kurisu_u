@@ -12,7 +12,6 @@
 namespace kurisu {
     class ThreadPool : uncopyable {
     public:
-        using BindFunc = std::function<void()>;
         explicit ThreadPool(const std::string& name = "ThreadPool") : m_name(name) {}
         ~ThreadPool();
 
@@ -20,10 +19,10 @@ namespace kurisu {
         void SetMaxQueueSize(int maxSize) { m_maxSize = maxSize; }
         void SetThrdNum(int thrdNum);
 
-        void SetThreadInitCallback(const BindFunc& callback) { m_thrdInitCallBack = callback; }
+        void SetThreadInitCallback(const std::function<void()>& callback) { m_thrdInitCallBack = callback; }
 
         void stop();
-        void run(BindFunc func);
+        void run(std::function<void()> func);
         void join();
 
         const std::string& name() const { return m_name; }
@@ -34,7 +33,7 @@ namespace kurisu {
         //当 m_maxSize == 0时恒为不满
         bool full() const;
         void RunInThread();
-        BindFunc take();
+        std::function<void()> take();
 
     private:
         std::atomic_bool m_running = 0;  //退出的标志
@@ -43,9 +42,9 @@ namespace kurisu {
         mutable std::mutex m_mu;
         std::condition_variable m_notEmptyCond;
         std::condition_variable m_notFullCond;
-        BindFunc m_thrdInitCallBack;
+        std::function<void()> m_thrdInitCallBack;
         std::vector<std::unique_ptr<Thread>> m_thrds;
-        std::deque<BindFunc> m_task;
+        std::deque<std::function<void()>> m_task;
     };
 
     inline ThreadPool::~ThreadPool()
@@ -76,7 +75,7 @@ namespace kurisu {
             if (m_thrdInitCallBack)
                 m_thrdInitCallBack();  //如果有初始化的回调函数就执行
             while (m_running)
-                if (BindFunc func(take()); func)  //从函数队列中拿出函数，是可执行的函数就执行，直到m_running被变成false
+                if (std::function<void()> func(take()); func)  //从函数队列中拿出函数，是可执行的函数就执行，直到m_running被变成false
                     func();
         }
         catch (const Exception& ex)
@@ -99,13 +98,13 @@ namespace kurisu {
         }
     }
 
-    inline ThreadPool::BindFunc ThreadPool::take()
+    inline std::function<void()> ThreadPool::take()
     {
         std::unique_lock locker(m_mu);
         if (m_task.empty() && m_running)
             m_notEmptyCond.wait(locker, [this] { return !m_task.empty() || !m_running; });  //等到有任务为止
 
-        BindFunc func;
+        std::function<void()> func;
         if (!m_task.empty())
         {
             func = std::move(m_task.front());  //取出函数
@@ -117,7 +116,7 @@ namespace kurisu {
         return func;
     }
 
-    inline void ThreadPool::run(BindFunc task)
+    inline void ThreadPool::run(std::function<void()> task)
     {
         if (m_thrds.empty())
             task();  //如果没有线程池，就直接用现在的线程执行函数

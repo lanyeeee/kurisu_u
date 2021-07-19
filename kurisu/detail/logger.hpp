@@ -35,10 +35,10 @@ namespace kurisu {
 
         class SetLogLevel;
 
-        using OutputFunc = void (*)(const char* msg, const uint64_t len);
-        using FlushFunc = void (*)();
-        static void SetOutput(OutputFunc);
-        static void SetFlush(FlushFunc);
+        //using OutputFunc = void (*)(const char* msg, const uint64_t len);
+        //using FlushFunc = void (*)();
+        static void SetOutput(void (*)(const char* msg, const uint64_t len));
+        static void SetFlush(void (*)());
         static void SetTimeZone(bool isLocal) { m_isLocalTimeZone = isLocal; }
 
     private:
@@ -77,8 +77,8 @@ namespace kurisu {
                 return Logger::LogLevel::INFO;
         }
 
-        inline Logger::OutputFunc g_output = DefaultOutput;
-        inline Logger::FlushFunc g_flush = DefaultFlush;
+        inline void (*g_output)(const char* msg, const uint64_t len) = DefaultOutput;
+        inline void (*g_flush)() = DefaultFlush;
         inline Logger::LogLevel g_logLevel = InitLogLevel();
         inline const char* LogLevelName[6] = {
             "TRACE ",
@@ -156,8 +156,8 @@ namespace kurisu {
         }
     }
     inline Logger::LogLevel Logger::level() { return detail::g_logLevel; }
-    inline void Logger::SetOutput(OutputFunc out) { detail::g_output = out; }
-    inline void Logger::SetFlush(FlushFunc flush) { detail::g_flush = flush; }
+    inline void Logger::SetOutput(void (*out)(const char* msg, const uint64_t len)) { detail::g_output = out; }
+    inline void Logger::SetFlush(void (*flush)()) { detail::g_flush = flush; }
 
     class Logger::SetLogLevel {
     public:

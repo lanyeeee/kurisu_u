@@ -11,14 +11,13 @@ namespace kurisu {
     namespace detail {
         class ThreadData {
         public:
-            using BindFunc = std::function<void()>;
-            ThreadData(BindFunc func, const std::string& name, pid_t& tid, CountDownLatch& latch)
+            ThreadData(std::function<void()> func, const std::string& name, pid_t& tid, CountDownLatch& latch)
                 : m_func(std::move(func)), m_name(name), m_tid(tid), m_latch(latch) {}
 
             void Run();
 
         public:
-            BindFunc m_func;
+            std::function<void()> m_func;
             std::string m_name;
             pid_t& m_tid;
             CountDownLatch& m_latch;
