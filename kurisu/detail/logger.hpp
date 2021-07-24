@@ -81,12 +81,12 @@ namespace kurisu {
         inline void (*g_flush)() = DefaultFlush;
         inline Logger::LogLevel g_logLevel = InitLogLevel();
         inline const char* LogLevelName[6] = {
-            "TRACE ",
-            "DEBUG ",
-            "INFO  ",
-            "WARN  ",
-            "ERROR ",
-            "FATAL ",
+            "[TRACE] ",
+            "[DEBUG] ",
+            "[INFO]  ",
+            "[WARN]  ",
+            "[ERROR] ",
+            "[FATAL] ",
         };
 
     }  // namespace detail
@@ -103,8 +103,8 @@ namespace kurisu {
 
         FormatTime();
         this_thrd::tid();
-        m_strm << KnownLengthString(this_thrd::TidString(), this_thrd::TidStringLength());
-        m_strm << KnownLengthString(detail::LogLevelName[(int)level], 6);
+        m_strm << '[' << KnownLengthString(this_thrd::TidString(), this_thrd::TidStringLength()) << ']' << " ";
+        m_strm << KnownLengthString(detail::LogLevelName[(int)level], 8);
         if (savedErrno != 0)
             m_strm << detail::strerror_tl(savedErrno) << " (errno=" << savedErrno << ") ";
     }

@@ -3,6 +3,7 @@
 #include <boost/operators.hpp>
 #include <chrono>
 #include <fmt/chrono.h>
+#include <fmt/compile.h>
 
 namespace kurisu {
     class Timestamp : copyable,
@@ -15,12 +16,20 @@ namespace kurisu {
         auto GetStamp() const { return m_stamp; }
         void swap(Timestamp& other) { std::swap(m_stamp, other.m_stamp); }
         bool valid() { return m_stamp != m_invalid; }
-        char* GmLogFormat(char* buf) const { return fmt::format_to(buf, "{:%F %T} ", fmt::gmtime(m_stamp)); }
-        char* LocalLogFormat(char* buf) const { return fmt::format_to(buf, "{:%F %T} ", fmt::localtime(m_stamp)); }
+        char* GmLogFormat(char* buf) const
+        {
+            uint64_t us = usSinceEpoch() - secondsSinceEpoch() * 1'000'000;
+            return fmt::format_to(buf, FMT_COMPILE("[{:%F %T}.{}] "), fmt::gmtime(m_stamp), us);
+        }
+        char* LocalLogFormat(char* buf) const
+        {
+            uint64_t us = usSinceEpoch() - secondsSinceEpoch() * 1'000'000;
+            return fmt::format_to(buf, FMT_COMPILE("[{:%F %T}.{}] "), fmt::localtime(m_stamp), us);
+        }
         //format gmtime
-        std::string GmFormatString() const { return fmt::format("{:%F %T}", fmt::gmtime(m_stamp)); }
+        std::string GmFormatString() const { return fmt::format(FMT_COMPILE("{:%F %T}"), fmt::gmtime(m_stamp)); }
         //format localtime
-        std::string LocalFormatString() const { return fmt::format("{:%F %T}", fmt::localtime(m_stamp)); }
+        std::string LocalFormatString() const { return fmt::format(FMT_COMPILE("{:%F %T}"), fmt::localtime(m_stamp)); }
         int64_t usSinceEpoch() const;
         int64_t nsSinceEpoch() const;
         int64_t secondsSinceEpoch() const;

@@ -8,6 +8,7 @@
 #include <thread>
 #include <chrono>
 #include <pthread.h>
+#include <fmt/compile.h>
 
 namespace kurisu {
     namespace this_thrd {
@@ -55,7 +56,8 @@ namespace kurisu {
             if (t_cachedTid == 0)
             {
                 t_cachedTid = detail::gettid();
-                t_tidStringLength = snprintf(t_tidString, sizeof(t_tidString), "%5d ", t_cachedTid);
+                char* p = fmt::format_to(t_tidString, FMT_COMPILE("{:5d}"), t_cachedTid);
+                t_tidStringLength = (int)(p - t_tidString);
             }
         }
         inline int tid()

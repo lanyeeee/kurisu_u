@@ -30,7 +30,6 @@ namespace kurisu {
             uint64_t m_writtenBytes = 0;
         };
 
-
         inline void LogFileAppender::append(const char* logline, const uint64_t len)
         {
             uint64_t written = 0;

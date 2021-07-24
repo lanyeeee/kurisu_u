@@ -2,6 +2,7 @@
 #include "copyable.hpp"
 #include "fixed_buf.hpp"
 #include <fmt/format.h>
+#include <fmt/compile.h>
 #include <algorithm>
 #include "known_length_string.hpp"
 
@@ -137,7 +138,7 @@ namespace kurisu {
     {
         if (m_buf.AvalibleSize() >= k_MaxSize)
         {
-            auto ptr = fmt::format_to(m_buf.index(), "{:.12g}", val);
+            auto ptr = fmt::format_to(m_buf.index(), FMT_COMPILE("{:.12g}"), val);
             uint64_t len = ptr - m_buf.index();
             m_buf.IndexMove(len);
         }

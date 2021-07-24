@@ -17,7 +17,6 @@ namespace kurisu {
     public:
         explicit Thread(std::function<void()> func, const std::string& name = std::string())
             : m_func(std::move(func)), m_name(name) { SetDefaultName(); }
-        // FIXME: make it movable in C++11
         ~Thread();
 
         void start();

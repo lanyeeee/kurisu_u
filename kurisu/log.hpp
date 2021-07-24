@@ -18,13 +18,9 @@ namespace kurisu {
 #define LOG_SYSERR kurisu::Logger(__FILE__, __LINE__, false).stream()
 #define LOG_SYSFATAL kurisu::Logger(__FILE__, __LINE__, true).stream()
 
-    const char* strerror_tl(int savedErrno);
 
-    // Taken from glog/logging.h
-    //
     // Check that the input is non NULL.  This very useful in constructor
     // initializer lists.
-
 #define CHECK_NOTNULL(val) \
     kurisu::CheckNotNull(__FILE__, __LINE__, "'" #val "' Must be non NULL", (val))
 

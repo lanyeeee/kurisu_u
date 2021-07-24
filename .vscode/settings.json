@@ -78,7 +78,8 @@
         "stop_token": "cpp",
         "valarray": "cpp",
         "*.ipp": "cpp",
-        "strstream": "cpp"
+        "strstream": "cpp",
+        "future": "cpp"
     },
     "sqltools.connections": [
         {
