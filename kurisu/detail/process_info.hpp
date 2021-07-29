@@ -100,7 +100,7 @@ namespace kurisu {
                 if (n >= 0)
                 {
                     if (size)
-                        *size = static_cast<int>(n);
+                        *size = (int)n;
                     m_buf[n] = '\0';
                 }
                 else
@@ -219,7 +219,7 @@ namespace kurisu {
             uint64_t lp = stat.find('(');
             uint64_t rp = stat.rfind(')');
             if (lp != std::string_view::npos && rp != std::string_view::npos && lp < rp)
-                name = std::string_view(stat.data() + lp + 1, static_cast<int>(rp - lp - 1));
+                name = std::string_view(stat.data() + lp + 1, (int)(rp - lp - 1));
             return name;
         }
         inline std::string ProcName() { return ProcName(ProcStat()).data(); }

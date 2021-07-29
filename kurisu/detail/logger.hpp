@@ -39,7 +39,7 @@ namespace kurisu {
         //using FlushFunc = void (*)();
         static void SetOutput(void (*)(const char* msg, const uint64_t len));
         static void SetFlush(void (*)());
-        static void SetTimeZone(bool isLocal) { m_isLocalTimeZone = isLocal; }
+        static void SetTimeZone(bool isLocal) { s_isLocalTimeZone = isLocal; }
 
     private:
         class Formatter {
@@ -56,10 +56,10 @@ namespace kurisu {
             const char* m_fileName;
             uint64_t m_fileNameSize;
         };
-        static bool m_isLocalTimeZone;
+        static bool s_isLocalTimeZone;
         Formatter m_fmt;
     };
-    inline bool Logger::m_isLocalTimeZone = false;
+    inline bool Logger::s_isLocalTimeZone = false;
 }  // namespace kurisu
 
 
@@ -117,7 +117,7 @@ namespace kurisu {
         if (m_time.secondsSinceEpoch() != t_lastSecond)
         {
             t_lastSecond = m_time.secondsSinceEpoch();
-            if (!m_isLocalTimeZone)
+            if (!s_isLocalTimeZone)
                 p = m_time.GmLogFormat(t_time);
             else
                 p = m_time.LocalLogFormat(t_time);

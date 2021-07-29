@@ -1,6 +1,6 @@
 #pragma once
 #include "copyable.hpp"
-#include "fixed_buf.hpp"
+#include "fixed_buffer.hpp"
 #include <fmt/format.h>
 #include <fmt/compile.h>
 #include <algorithm>
@@ -19,7 +19,7 @@ namespace kurisu {
 
             do
             {
-                int lsd = static_cast<int>(i % 10);
+                int lsd = (int)(i % 10);
                 i /= 10;
                 *p++ = zero[lsd];
             } while (i != 0);
@@ -41,7 +41,7 @@ namespace kurisu {
 
             do
             {
-                int lsd = static_cast<int>(i % 16);
+                int lsd = (int)(i % 16);
                 i /= 16;
                 *p++ = digitsHex[lsd];
             } while (i != 0);
@@ -56,7 +56,7 @@ namespace kurisu {
 
     class LogStream : uncopyable {
     public:
-        using Buf = detail::FixedBuf<detail::k_SmallBuf>;
+        using Buf = detail::FixedBuffer<detail::k_SmallBuf>;
 
         void append(const char* data, int len) { m_buf.append(data, len); }
         const Buf& buffer() const { return m_buf; }
@@ -140,7 +140,7 @@ namespace kurisu {
         {
             auto ptr = fmt::format_to(m_buf.index(), FMT_COMPILE("{:.12g}"), val);
             uint64_t len = ptr - m_buf.index();
-            m_buf.IndexMove(len);
+            m_buf.IndexShiftRight(len);
         }
         return *this;
     }
@@ -153,7 +153,7 @@ namespace kurisu {
             buf[0] = '0';
             buf[1] = 'x';
             uint64_t len = detail::convertHex(buf + 2, val);
-            m_buf.IndexMove(len + 2);
+            m_buf.IndexShiftRight(len + 2);
         }
         return *this;
     }
@@ -197,7 +197,7 @@ namespace kurisu {
         if (m_buf.AvalibleSize() >= k_MaxSize)
         {
             uint64_t len = detail::convert(m_buf.index(), val);
-            m_buf.IndexMove(len);
+            m_buf.IndexShiftRight(len);
         }
     }
 

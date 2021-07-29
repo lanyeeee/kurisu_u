@@ -12,13 +12,13 @@ namespace kurisu {
         constexpr uint64_t k_LargeBuf = 4'000'000;
 
         template <uint64_t SIZE>
-        class FixedBuf : uncopyable {
+        class FixedBuffer : uncopyable {
         public:
-            FixedBuf() : m_index(m_data) { m_data[SIZE] = '\0'; }
+            FixedBuffer() : m_index(m_data) { m_data[SIZE] = '\0'; }
 
             uint64_t size() const { return (uint64_t)(m_index - m_data); }
             const char* data() const { return m_data; }
-            void IndexMove(uint64_t num) { m_index += num; }
+            void IndexShiftRight(uint64_t num) { m_index += num; }
             char* index() { return m_index; }
             void reset() { m_index = m_data; }
             void zero() { memset(m_data, 0, SIZE); }

@@ -1,11 +1,11 @@
 #pragma once
 #include <memory>
-#include "copyable.hpp"
-#include "logger.hpp"
 #include <mutex>
 #include <string>
 #include <string.h>
 #include <string_view>
+#include "copyable.hpp"
+#include "logger.hpp"
 #include "../time_stamp.hpp"
 #include "process_info.hpp"
 #include "string_arg.hpp"
@@ -178,7 +178,7 @@ namespace kurisu {
         void stop();
 
     private:
-        using Buf = detail::FixedBuf<detail::k_LargeBuf>;
+        using Buf = detail::FixedBuffer<detail::k_LargeBuf>;
         using BufVector = std::vector<std::unique_ptr<Buf>>;
         using BufPtr = BufVector::value_type;
 

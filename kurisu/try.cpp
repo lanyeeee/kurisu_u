@@ -2,3 +2,4 @@
 #include "thread.hpp"
 #include "log.hpp"
 #include "detail/socket.hpp"
+#include "detail/buffer.hpp"

@@ -27,7 +27,7 @@ namespace kurisu {
         pid_t tid() const { return m_tid; }
         const std::string& name() const { return m_name; }
 
-        static int numCreated() { return m_createdNum; }
+        static int numCreated() { return s_createdNum; }
 
     private:
         void SetDefaultName();
@@ -39,9 +39,9 @@ namespace kurisu {
         std::string m_name;
         CountDownLatch m_latch = CountDownLatch(1);
         std::thread m_thrd;
-        static std::atomic_int32_t m_createdNum;
+        static std::atomic_int32_t s_createdNum;
     };
-    inline std::atomic_int32_t Thread::m_createdNum = 0;
+    inline std::atomic_int32_t Thread::s_createdNum = 0;
     inline Thread::~Thread()
     {
         if (m_started && m_thrd.joinable())
@@ -49,9 +49,9 @@ namespace kurisu {
     }
     inline void Thread::SetDefaultName()
     {
-        ++m_createdNum;
+        ++s_createdNum;
         if (m_name.empty())
-            m_name = fmt::format("Thread{}", m_createdNum);
+            m_name = fmt::format("Thread{}", s_createdNum);
     }
     inline void Thread::start()
     {

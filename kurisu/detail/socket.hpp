@@ -3,7 +3,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/socket.h>
-#include <sys/uio.h>      // readv
+#include <sys/uio.h>  // readv
+#include <sys/timerfd.h>
 #include <netinet/tcp.h>  //tcp_info
 #include <unistd.h>
 #include <netdb.h>  //addrinfo
@@ -11,7 +12,8 @@
 #include "../log.hpp"
 
 
-
+inline uint64_t htonll(uint64_t val) { return htobe64(val); }
+inline uint64_t ntohll(uint64_t val) { return be64toh(val); }
 
 namespace kurisu {
 
@@ -243,6 +245,36 @@ namespace kurisu {
                 return false;
         }
 
+        inline int MakeNonblockingTimerfd()
+        {
+            int timerfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+            if (timerfd < 0)
+                LOG_SYSFATAL << "Failed in MakeNonblockingTimerfd";
+            return timerfd;
+        }
+
+        inline timespec HowMuchTimeFromNow(Timestamp when)
+        {
+            Timestamp now;
+            int64_t ns = when.nsSinceEpoch() - now.nsSinceEpoch();
+            timespec ts;
+            ts.tv_sec = (time_t)(ns / 1'000'000'000);
+            ts.tv_nsec = ns % 1'000'000'000;
+            return ts;
+        }
+
+        inline void ResetTimerfd(int timerfd, Timestamp runtime)
+        {
+            itimerspec newValue;
+            itimerspec oldValue;
+            memset(&newValue, 0, sizeof(newValue));
+            memset(&oldValue, 0, sizeof(oldValue));
+            newValue.it_value = HowMuchTimeFromNow(runtime);
+
+            if (int ret = timerfd_settime(timerfd, 0, &newValue, &oldValue); ret)  //FIXME
+                LOG_SYSERR << "timerfd_settime()";
+        }
+
 
 
     }  // namespace detail
@@ -356,19 +388,19 @@ namespace kurisu {
     inline void Socket::SetTcpNoDelay(bool on)
     {
         int optval = on ? 1 : 0;
-        setsockopt(m_fd, IPPROTO_TCP, TCP_NODELAY, &optval, static_cast<socklen_t>(sizeof optval));
+        setsockopt(m_fd, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval));
     }
     inline void Socket::SetReuseAddr(bool on)
     {
         int optval = on ? 1 : 0;
-        setsockopt(m_fd, SOL_SOCKET, SO_REUSEADDR, &optval, static_cast<socklen_t>(sizeof optval));
+        setsockopt(m_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
     }
     inline void Socket::SetReusePort(bool on)
     {
 #ifdef SO_REUSEPORT
         int optval = on ? 1 : 0;
-        int ret = ::setsockopt(m_fd, SOL_SOCKET, SO_REUSEPORT,
-                               &optval, static_cast<socklen_t>(sizeof optval));
+        int ret = setsockopt(m_fd, SOL_SOCKET, SO_REUSEPORT,
+                             &optval, sizeof(optval));
         if (ret < 0 && on)
         {
             LOG_SYSERR << "SO_REUSEPORT failed.";
