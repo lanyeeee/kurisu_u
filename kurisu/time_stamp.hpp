@@ -6,9 +6,7 @@
 #include <fmt/compile.h>
 
 namespace kurisu {
-    class Timestamp : copyable,
-                      public boost::less_than_comparable<Timestamp>,
-                      public boost::equality_comparable<Timestamp> {
+    class Timestamp : copyable, boost::totally_ordered<Timestamp> {
     public:
         Timestamp() : m_stamp(std::chrono::system_clock::now()) {}
         explicit Timestamp(std::chrono::system_clock::time_point stamp) : m_stamp(stamp) {}
@@ -44,8 +42,9 @@ namespace kurisu {
     };
     inline std::chrono::system_clock::time_point Timestamp::s_invalid;
 
-    inline bool operator<(Timestamp a, Timestamp b) { return a.GetStamp() < b.GetStamp(); }
-    inline bool operator==(Timestamp a, Timestamp b) { return a.GetStamp() == b.GetStamp(); }
+    inline bool operator<(const Timestamp& a, const Timestamp& b) { return a.GetStamp() < b.GetStamp(); }
+    inline bool operator==(const Timestamp& a, const Timestamp& b) { return a.GetStamp() == b.GetStamp(); }
+
     inline int64_t Timestamp::usSinceEpoch() const
     {
         using namespace std::chrono;
