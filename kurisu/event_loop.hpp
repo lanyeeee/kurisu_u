@@ -30,24 +30,24 @@ namespace kurisu {
     class EventLoop : uncopyable {
     public:
         EventLoop();
-        ~EventLoop();  // force out-line dtor, for std::unique_ptr members.
+        ~EventLoop();
         void loop();
         //可以跨线程调用，如果在其他线程调用，会调用wakeup保证退出
         void quit();
         Timestamp GetReturnTime() const { return m_returnTime; }
         int64_t GetLoopNum() const { return m_loopNum; }
         //在EventLoop所属的线程中执行此函数
-        void RunInLoop(std::function<void()> callback);
+        void run(std::function<void()> callback);
         //注册只执行一次的额外任务
         void AddExtraFunc(std::function<void()> callback);
         //某时刻触发Timer
         TimerID runAt(Timestamp time, std::function<void()> callback);
-        //多久后触发Timer
+        //多久后触发Timer,单位second
         TimerID runAfter(double delay, std::function<void()> callback);
-        //每隔多久触发Timer
+        //每隔多久触发Timer,单位second
         TimerID runEvery(double interval, std::function<void()> callback);
         //取消定时器
-        void cancel(TimerID timerId);
+        void cancel(TimerID timerID);
 
         uint64_t GetExtraFuncsNum() const;
         //唤醒阻塞在poll的loop
@@ -62,13 +62,13 @@ namespace kurisu {
         void AssertInLoopThread();
         bool InLoopThread() const { return m_threadID == this_thrd::tid(); }
 
-        bool HandlingEvent() const { return m_handlingEvent; }
+        bool IsRunningCallback() const { return m_runningCallback; }
         //获取此线程的EventLoop
         static EventLoop* GetLoopOfThisThread();
 
     private:
         void WakeUpRead();
-        void HandleExtraFunc();
+        void RunExtraFunc();
 
         //DEBUG用的,打印每个事件
         void PrintActiveChannels() const;
@@ -76,8 +76,8 @@ namespace kurisu {
         using ChannelList = std::vector<Channel*>;
 
         bool m_looping = false;           //线程是否调用了loop()
-        bool m_handlingEvent = false;     //线程是否正在执行回调函数
-        bool m_doingExtraFunc = false;    //  EventLoop线程是否正在执行的额外任务
+        bool m_runningCallback = false;   //线程是否正在执行回调函数
+        bool m_runningExtraFunc = false;  //  EventLoop线程是否正在执行的额外任务
         std::atomic_bool m_quit = false;  //线程是否调用了quit()
         int m_wakeUpfd;                   //一个eventfd   用于唤醒阻塞在poll的loop
         const pid_t m_threadID;
@@ -96,39 +96,32 @@ namespace kurisu {
 
     class EventLoopThread : uncopyable {
     public:
-        EventLoopThread(const std::function<void(EventLoop*)>& callback = std::function<void(EventLoop*)>(),
+        EventLoopThread(const std::function<void(EventLoop*)>& threadInitCallback = std::function<void(EventLoop*)>(),
                         const std::string& name = std::string());
         ~EventLoopThread();
-        EventLoop* startLoop();
+
+        EventLoop* start();
 
     private:
-        void Func();
+        void Loop();
 
         EventLoop* m_loop = nullptr;
         bool m_exiting = false;
         Thread m_thrd;
         std::mutex m_mu;
         std::condition_variable m_cond;
-        std::function<void(EventLoop*)> m_callback;
+        std::function<void(EventLoop*)> m_threadInitCallback;
     };
 
     class EventLoopThreadPool : uncopyable {
     public:
         EventLoopThreadPool(EventLoop* loop, const std::string& name);
-        void setThreadNum(int thrdNum) { m_thrdNum = thrdNum; }
-        void start(const std::function<void(EventLoop*)>& callback = std::function<void(EventLoop*)>());
-
-        // valid after calling start()
-        /// round-robin
+        void setThreadNum(int threadNum) { m_thrdNum = threadNum; }
+        void start(const std::function<void(EventLoop*)>& threadInitCallback = std::function<void(EventLoop*)>());
         EventLoop* GetNextLoop();
-
-        /// with the same hash code, it will always return the same EventLoop
-        EventLoop* GetLoopForHash(uint64_t hashCode);
-
+        EventLoop* GetLoopRandom();
         std::vector<EventLoop*> GetAllLoops();
-
         bool started() const { return m_started; }
-
         const std::string& name() const { return m_name; }
 
     private:
@@ -137,8 +130,8 @@ namespace kurisu {
         bool m_started = false;
         int m_thrdNum = 0;
         int m_next = 0;
-        std::vector<std::unique_ptr<EventLoopThread>> m_thrdVec;
-        std::vector<EventLoop*> m_loopVec;
+        std::vector<std::unique_ptr<EventLoopThread>> m_thrds;
+        std::vector<EventLoop*> m_loops;
     };
 
     namespace detail {
@@ -158,7 +151,17 @@ namespace kurisu {
                 return evtfd;
         }
 
+        inline void ReadTimerfd(int timerfd, Timestamp now)
+        {
+            uint64_t tmp;
+            ssize_t n = read(timerfd, &tmp, sizeof(tmp));
+            LOG_TRACE << "TimerQueue::ReadTimerfd() " << tmp << " at " << now.GmFormatString() << "(GM)";
+            if (n != sizeof(tmp))
+                LOG_ERROR << "TimerQueue::ReadTimerfd() reads " << n << " bytes instead of 8";
+        }
+
         inline bool ignoreSigPipe = [] { return signal(SIGPIPE, SIG_IGN); }();
+        inline bool setRandomSeed = [] { srand((uint32_t)time(0)); return 0; }();
 
     }  // namespace detail
 
@@ -166,7 +169,7 @@ namespace kurisu {
     public:
         Channel(EventLoop* loop, int fd) : m_fd(fd), m_loop(loop) {}
         //处理事件
-        void HandleEvent(Timestamp receiveTime);
+        void RunCallback(Timestamp timestamp);
         //设置可读事件回调函数
         void SetReadCallback(std::function<void(Timestamp)> callback) { m_readCallback = std::move(callback); }
         //设置可写事件回调函数
@@ -176,13 +179,13 @@ namespace kurisu {
         //设置错误事件回调函数
         void SetErrorCallback(std::function<void()> callback) { m_errorCallback = std::move(callback); }
 
-        //用于延长某些对象的生命期,使其寿命长过handleEvent()函数
+        //用于延长某些对象的生命期,使其寿命与obj相同
         void tie(const std::shared_ptr<void>&);
         int fd() const { return m_fd; }
         //返回注册的事件
         int GetEvents() const { return m_events; }
         //设置就绪的事件
-        void SetRevents(int revt) { m_revents = revt; }
+        void SetRevents(int revents) { m_revents = revents; }
 
         //是否未注册事件
         bool IsNoneEvent() const { return m_events == k_NoneEvent; }
@@ -204,12 +207,13 @@ namespace kurisu {
 
         // for Poller
         int GetStatus() { return m_status; }
-        void set_status(int status) { m_status = status; }
+        void SetStatus(int status) { m_status = status; }
 
         //DEBUG 用的
         std::string ReventsString() const { return EventsToString(m_fd, m_revents); }
         std::string EventsString() const { return EventsToString(m_fd, m_events); }
 
+        //是否生成EPOLLHUP事件的日志
         void OnLogHup() { m_logHup = true; }
         void OffLogHup() { m_logHup = false; }
         //返回所属的EventLoop
@@ -223,16 +227,16 @@ namespace kurisu {
         //加入所属的EventLoop
         void update();
         //处理到来的事件
-        void HandleEventWithGuard(Timestamp receiveTime);
+        void RunCallbackWithGuard(Timestamp timestamp);
 
         static const int k_NoneEvent = 0;                   //无事件
         static const int k_ReadEvent = EPOLLIN | EPOLLPRI;  //可读
         static const int k_WriteEvent = EPOLLOUT;           //可写
 
-        bool m_tied = false;           //  是否将生命周期绑定到了外部s
-        bool m_handlingEvent = false;  //是否处于处理事件中
-        bool m_inLoop = false;         //是否已在EventLoop里注册
-        bool m_logHup = true;          //EPOLLHUP时是否生成日志
+        bool m_tied = false;             //  是否将生命周期绑定到了外部s
+        bool m_runningCallback = false;  //是否处于处理事件中
+        bool m_inLoop = false;           //是否已在EventLoop里注册
+        bool m_logHup = true;            //EPOLLHUP时是否生成日志
 
         const int m_fd;     //此channel负责管理的文件描述符
         int m_events = 0;   //注册的事件
@@ -240,7 +244,7 @@ namespace kurisu {
         int m_status = -1;  //在poller中的状态
         EventLoop* m_loop;  //指向此channel所属的EventLoop
 
-        std::weak_ptr<void> m_tie;                      //用来延长生命周期
+        std::weak_ptr<void> m_tie;                      //用来绑定obj以修改生命周期
         std::function<void(Timestamp)> m_readCallback;  //读事件回调函数
         std::function<void()> m_writeCallback;          //写事件回调函数
         std::function<void()> m_closeCallback;          //关闭事件回调函数
@@ -298,16 +302,15 @@ namespace kurisu {
         //可以跨线程调用
         TimerID add(std::function<void()> callback, Timestamp when, double interval);
         //可以跨线程调用
-        void cancel(TimerID id) { m_loop->RunInLoop(std::bind(&TimerQueue::cancelInLoop, this, id)); }
+        void cancel(TimerID id) { m_loop->run(std::bind(&TimerQueue::cancelInLoop, this, id)); }
 
     private:
         //以下成员函数只可能在TimerQueue所属的IO线程调用，因而不用加锁
-        void ReadTimerfd(int timerfd, Timestamp now);
 
         void AddInLoop(Timer* timer);
         void cancelInLoop(TimerID timerID);
         //当Timer触发超时时回调此函数
-        void HandleRead();
+        void HandleTimerfd();
         //返回超时的Timer
         TimeoutTimer GetTimeout(Timestamp now);
         //重置非一次性的Timer
@@ -364,19 +367,18 @@ namespace kurisu {
             //没事的时候loop会阻塞在这里
             m_returnTime = m_poller->poll(detail::k_PollTimeoutMs, &m_activeChannels);
             ++m_loopNum;
+
             if (Logger::level() <= Logger::LogLevel::TRACE)
                 PrintActiveChannels();  //将发生的事件写入日志
 
-            m_handlingEvent = true;
+            m_runningCallback = true;
             //执行每个有事件到来的channel的回调函数
             for (auto&& channel : m_activeChannels)
-            {
-                m_thisActiveChannel = channel;
-                m_thisActiveChannel->HandleEvent(m_returnTime);  //TODO  为什么不一步到位
-            }
+                channel->RunCallback(m_returnTime);
+
             m_thisActiveChannel = nullptr;
-            m_handlingEvent = false;
-            HandleExtraFunc();  //执行额外的回调函数
+            m_runningCallback = false;
+            RunExtraFunc();  //执行额外的回调函数
         }
 
         LOG_TRACE << "EventLoop " << this << " stop looping";
@@ -388,7 +390,7 @@ namespace kurisu {
         if (!InLoopThread())
             wakeup();
     }
-    inline void EventLoop::RunInLoop(std::function<void()> callback)
+    inline void EventLoop::run(std::function<void()> callback)
     {
         if (InLoopThread())
             callback();
@@ -402,7 +404,7 @@ namespace kurisu {
             m_ExtraFuncs.emplace_back(std::move(callback));
         }
 
-        if (!InLoopThread() || m_doingExtraFunc)
+        if (!InLoopThread() || m_runningExtraFunc)
             wakeup();
     }
     inline uint64_t EventLoop::GetExtraFuncsNum() const
@@ -440,21 +442,21 @@ namespace kurisu {
         if (n != sizeof(one))
             LOG_ERROR << "EventLoop::WakeUpRead() reads " << n << " bytes instead of 8";
     }
-    inline void EventLoop::HandleExtraFunc()
+    inline void EventLoop::RunExtraFunc()
     {
         std::vector<std::function<void()>> functors;
-        m_doingExtraFunc = true;
+        m_runningExtraFunc = true;
 
         {
             std::lock_guard lock(m_mu);
             functors.swap(m_ExtraFuncs);
         }
-        //既减少了持有锁的时间，也防止了死锁(func里可能也调用了HandleExtraFunc()
+        //既减少了持有锁的时间，也防止了死锁(func里可能也调用了RunExtraFunc()
 
         for (auto&& func : functors)
             func();
 
-        m_doingExtraFunc = false;
+        m_runningExtraFunc = false;
     }
     inline void EventLoop::PrintActiveChannels() const
     {
@@ -482,12 +484,12 @@ namespace kurisu {
         Timestamp time(AddTime(Timestamp::now(), interval));
         return timerQueue_->add(std::move(cb), time, interval);
     }
-    inline void EventLoop::cancel(TimerID timerId) { return timerQueue_->cancel(timerId); }
+    inline void EventLoop::cancel(TimerID timerID) { return timerQueue_->cancel(timerID); }
 
 
 
 
-    inline EventLoopThread::EventLoopThread(const std::function<void(EventLoop*)>& callback, const std::string& name) : m_thrd(std::bind(&EventLoopThread::Func, this), name), m_callback(callback) {}
+    inline EventLoopThread::EventLoopThread(const std::function<void(EventLoop*)>& threadInitCallback, const std::string& name) : m_thrd(std::bind(&EventLoopThread::Loop, this), name), m_threadInitCallback(threadInitCallback) {}
     inline EventLoopThread::~EventLoopThread()
     {
         m_exiting = true;
@@ -497,26 +499,21 @@ namespace kurisu {
             m_thrd.join();
         }
     }
-    inline EventLoop* EventLoopThread::startLoop()
+    inline EventLoop* EventLoopThread::start()
     {
         m_thrd.start();
-
-        EventLoop* loop = nullptr;
-        {
-            std::unique_lock locker(m_mu);
-            if (m_loop == nullptr)
-                m_cond.wait(locker, [this] { return m_loop != nullptr; });
-            loop = m_loop;
-        }
-
-        return loop;
+        std::unique_lock locker(m_mu);
+        //如果初始化未完成
+        if (m_loop == nullptr)
+            m_cond.wait(locker, [this] { return m_loop != nullptr; });  //等待初始化完成
+        return m_loop;
     }
-    inline void EventLoopThread::Func()
+    inline void EventLoopThread::Loop()
     {
         EventLoop loop;
 
-        if (m_callback)
-            m_callback(&loop);
+        if (m_threadInitCallback)
+            m_threadInitCallback(&loop);
 
         {
             std::lock_guard locker(m_mu);
@@ -533,52 +530,49 @@ namespace kurisu {
 
     inline EventLoopThreadPool::EventLoopThreadPool(EventLoop* loop, const std::string& name)
         : m_loop(loop), m_name(name) {}
-    inline void EventLoopThreadPool::start(const std::function<void(EventLoop*)>& callback)
+    inline void EventLoopThreadPool::start(const std::function<void(EventLoop*)>& threadInitCallback)
     {
         m_loop->AssertInLoopThread();
         m_started = true;
-
-        for (int i = 0; i < m_thrdNum; ++i)
+        //创建m_thrdNum个线程，每个线程都用threadInitCallback进行初始化
+        for (int i = 0; i < m_thrdNum; i++)
         {
-            char buf[m_name.size() + 32];
-            fmt::format_to(buf, "{}{}", m_name.c_str(), i);
-            EventLoopThread* t = new EventLoopThread(callback, buf);
-            m_thrdVec.emplace_back(std::unique_ptr<EventLoopThread>(t));
-            m_loopVec.emplace_back(t->startLoop());
+            char name[m_name.size() + 32];
+            fmt::format_to(name, "{}{}", m_name.c_str(), i);
+            EventLoopThread* p = new EventLoopThread(threadInitCallback, name);
+            m_thrds.emplace_back(std::unique_ptr<EventLoopThread>(p));
+            m_loops.emplace_back(p->start());
         }
-        if (m_thrdNum == 0 && callback)
-            callback(m_loop);
+        //如果m_thrdNum == 0,就用当前线程执行threadInitCallback
+        if (m_thrdNum == 0 && threadInitCallback)
+            threadInitCallback(m_loop);
     }
     inline EventLoop* EventLoopThreadPool::GetNextLoop()
     {
         m_loop->AssertInLoopThread();
         EventLoop* loop = m_loop;
 
-        if (!m_loopVec.empty())
+        if (!m_loops.empty())
         {
-            loop = m_loopVec[m_next];
-            ++m_next;
-            if ((uint64_t)m_next >= m_loopVec.size())
+            loop = m_loops[m_next++];
+            if ((uint64_t)m_next >= m_loops.size())
                 m_next = 0;
         }
         return loop;
     }
-    inline EventLoop* EventLoopThreadPool::GetLoopForHash(uint64_t hashCode)
+    inline EventLoop* EventLoopThreadPool::GetLoopRandom()
     {
         m_loop->AssertInLoopThread();
-        EventLoop* loop = m_loop;
-
-        if (!m_loopVec.empty())
-            loop = m_loopVec[hashCode % m_loopVec.size()];
-        return loop;
+        if (!m_loops.empty())
+            return m_loops[rand() % m_loops.size()];
     }
     inline std::vector<EventLoop*> EventLoopThreadPool::GetAllLoops()
     {
         m_loop->AssertInLoopThread();
-        if (m_loopVec.empty())
-            return std::vector<EventLoop*>(1, m_loop);
+        if (m_loops.empty())
+            return std::vector<EventLoop*>(1, m_loop);  //没有就造一个
         else
-            return m_loopVec;
+            return m_loops;
     }
 
 
@@ -587,17 +581,17 @@ namespace kurisu {
 
 
 
-    inline void Channel::HandleEvent(Timestamp receiveTime)
+    inline void Channel::RunCallback(Timestamp timestamp)
     {
         std::shared_ptr<void> guard;
         if (m_tied)
         {
             guard = m_tie.lock();
             if (guard)  //如果绑定的对象还活着
-                HandleEventWithGuard(receiveTime);
+                RunCallbackWithGuard(timestamp);
         }
         else
-            HandleEventWithGuard(receiveTime);
+            RunCallbackWithGuard(timestamp);
     }
     inline void Channel::tie(const std::shared_ptr<void>& obj)
     {
@@ -633,18 +627,17 @@ namespace kurisu {
         m_inLoop = true;
         m_loop->UpdateChannel(this);
     }
-    inline void Channel::HandleEventWithGuard(Timestamp receiveTime)
+    inline void Channel::RunCallbackWithGuard(Timestamp timestamp)
     {
-        m_handlingEvent = true;
+        m_runningCallback = true;
         LOG_TRACE << ReventsString();
         if ((m_revents & EPOLLHUP) && !(m_revents & EPOLLIN))
         {
             if (m_logHup)
-                LOG_WARN << "fd = " << m_fd << " Channel::HandleEvent() EPOLLHUP";
+                LOG_WARN << "fd = " << m_fd << " Channel::RunCallbackWithGuard() EPOLLHUP";
             if (m_closeCallback)
                 m_closeCallback();
         }
-
         if (m_revents & EPOLLERR)
         {
             if (m_errorCallback)
@@ -653,14 +646,14 @@ namespace kurisu {
         if (m_revents & (EPOLLIN | EPOLLPRI | EPOLLRDHUP))
         {
             if (m_readCallback)
-                m_readCallback(receiveTime);
+                m_readCallback(timestamp);
         }
         if (m_revents & EPOLLOUT)
         {
             if (m_writeCallback)
                 m_writeCallback();
         }
-        m_handlingEvent = false;
+        m_runningCallback = false;
     }
     inline void Channel::OnReading()
     {
@@ -727,7 +720,7 @@ namespace kurisu {
                 m_channels[fd] = channel;  //在ChannelMap里注册
 
             //旧的就不用注册到ChannelMap里了
-            channel->set_status(k_Added);    //设置状态为已添加
+            channel->SetStatus(k_Added);     //设置状态为已添加
             update(EPOLL_CTL_ADD, channel);  //将channel对应的fd注册到epoll中
         }
         else  //修改
@@ -735,7 +728,7 @@ namespace kurisu {
             if (channel->IsNoneEvent())  //此channel是否未注册事件
             {
                 update(EPOLL_CTL_DEL, channel);  //直接从epoll中删除
-                channel->set_status(k_Deleted);  //只代表不在epoll中，不代表已经从ChannelMap中移除
+                channel->SetStatus(k_Deleted);   //只代表不在epoll中，不代表已经从ChannelMap中移除
             }
             else
                 update(EPOLL_CTL_MOD, channel);  //修改(更新)事件
@@ -757,7 +750,7 @@ namespace kurisu {
 
         if (status == k_Added)               //如果已在epoll中注册
             update(EPOLL_CTL_DEL, channel);  //就从epoll中移除
-        channel->set_status(k_New);
+        channel->SetStatus(k_New);
     }
     inline const char* Poller::OperationString(int op)
     {
@@ -806,7 +799,7 @@ namespace kurisu {
     inline TimerQueue::TimerQueue(EventLoop* loop)
         : m_timerfd(detail::MakeNonblockingTimerfd()), m_loop(loop), m_timerfdChannel(loop, m_timerfd)
     {
-        m_timerfdChannel.SetReadCallback(std::bind(&TimerQueue::HandleRead, this));
+        m_timerfdChannel.SetReadCallback(std::bind(&TimerQueue::HandleTimerfd, this));
         m_timerfdChannel.OnReading();
     }
     inline TimerQueue::~TimerQueue()
@@ -819,7 +812,7 @@ namespace kurisu {
     {
         Timer* timer = new Timer(std::move(callback), when, interval);
         //在IO线程中执行addTimerInLoop,保证线程安全
-        m_loop->RunInLoop(std::bind(&TimerQueue::AddInLoop, this, timer));
+        m_loop->run(std::bind(&TimerQueue::AddInLoop, this, timer));
 
         return TimerID(timer);
     }
@@ -844,19 +837,11 @@ namespace kurisu {
                 m_cancelledSoon.emplace_back(p->second.get());
         }
     }
-    inline void TimerQueue::ReadTimerfd(int timerfd, Timestamp now)
-    {
-        uint64_t tmp;
-        ssize_t n = read(timerfd, &tmp, sizeof(tmp));
-        LOG_TRACE << "TimerQueue::handleRead() " << tmp << " at " << now.GmFormatString() << "(GM)";
-        if (n != sizeof(tmp))
-            LOG_ERROR << "TimerQueue::handleRead() reads " << n << " bytes instead of 8";
-    }
-    inline void TimerQueue::HandleRead()
+    inline void TimerQueue::HandleTimerfd()
     {
         m_loop->AssertInLoopThread();
         Timestamp now;
-        ReadTimerfd(m_timerfd, now);  //清理超时事件，避免一直触发  //FIXME  LT模式的弊端?
+        detail::ReadTimerfd(m_timerfd, now);  //清理超时事件，避免一直触发  //FIXME  LT模式的弊端?
 
         //获取now之前的所有Timer
         TimeoutTimer timeout = GetTimeout(now);
