@@ -263,7 +263,7 @@ namespace kurisu {
             return ts;
         }
 
-        inline void ResetTimerfd(int timerfd, Timestamp runtime)
+        inline int ResetTimerfd(int timerfd, Timestamp runtime)
         {
             itimerspec newValue;
             itimerspec oldValue;
@@ -271,8 +271,7 @@ namespace kurisu {
             memset(&oldValue, 0, sizeof(oldValue));
             newValue.it_value = HowMuchTimeFromNow(runtime);
 
-            if (int ret = timerfd_settime(timerfd, 0, &newValue, &oldValue); ret)  //FIXME
-                LOG_SYSERR << "timerfd_settime()";
+            return timerfd_settime(timerfd, 0, &newValue, &oldValue);  //FIXME
         }
 
 

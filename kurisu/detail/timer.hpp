@@ -11,7 +11,7 @@ namespace kurisu {
             : m_runtime(when), m_interval(interval), m_repeat(interval > 0.0), m_callback(std::move(cb)) {}
 
         void run() const { m_callback(); }
-        void restart(Timestamp now);
+        void restart();
 
         Timestamp GetRuntime() const { return m_runtime; }
         bool IsRepeat() const { return m_repeat; }
@@ -25,11 +25,11 @@ namespace kurisu {
         const std::function<void()> m_callback;  //定时器回调函数
     };
 
-    inline void Timer::restart(Timestamp now)
+    inline void Timer::restart()
     {
         //如果是重复的定时器
         if (m_repeat)
-            m_runtime = AddTime(now, m_interval);  //重新计算下一个超时时刻
+            m_runtime = AddTime(m_runtime, m_interval);  //重新计算下一个超时时刻
         else
             m_runtime = Timestamp::invalid();
     }

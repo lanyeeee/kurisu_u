@@ -311,7 +311,7 @@ namespace kurisu {
         //返回超时的Timer
         TimeoutTimer GetTimeout(Timestamp now);
         //重置非一次性的Timer
-        void reset(TimeoutTimer& timeout, Timestamp now);
+        void reset(TimeoutTimer& timeout);
         bool insert(Timer* timer);
 
         bool runningCallback = false;
@@ -868,7 +868,7 @@ namespace kurisu {
         runningCallback = false;
 
         //重置非一次性的Timer
-        reset(timeout, now);
+        reset(timeout);
     }
     inline TimerQueue::TimeoutTimer TimerQueue::GetTimeout(Timestamp now)
     {
@@ -885,12 +885,12 @@ namespace kurisu {
         }
         return timeout;
     }
-    inline void TimerQueue::reset(TimeoutTimer& timeout, Timestamp now)
+    inline void TimerQueue::reset(TimeoutTimer& timeout)
     {
         for (auto&& item : timeout)
             if (item->IsRepeat())
             {
-                item->restart(now);
+                item->restart();
                 m_timers[std::make_pair(item->GetRuntime(), item.get())] = std::move(item);
             }
 
@@ -898,8 +898,20 @@ namespace kurisu {
             m_timers.erase(it.Key());
         m_cancelledSoon.clear();
 
-        if (!m_timers.empty())
-            detail::ResetTimerfd(m_timerfd, m_timers.begin()->second->GetRuntime());
+        while (!m_timers.empty())
+            if (detail::ResetTimerfd(m_timerfd, m_timers.begin()->second->GetRuntime()) == 0)
+                break;
+            else
+            {
+                LOG_ERROR << "a timeout timer was ignored";
+                std::unique_ptr<Timer>& timer = m_timers.begin()->second;
+                if (timer->IsRepeat())
+                {
+                    timer->restart();
+                    m_timers[std::make_pair(timer->GetRuntime(), timer.get())] = std::move(timer);
+                }
+                m_timers.erase(m_timers.begin());
+            }
     }
     inline bool TimerQueue::insert(Timer* timer)
     {
