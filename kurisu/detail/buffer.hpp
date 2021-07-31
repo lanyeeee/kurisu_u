@@ -44,8 +44,8 @@ namespace kurisu {
         std::string ToString() const { return std::string(BeginRead(), ReadableBytes()); }
 
         void append(const char* data, uint64_t len);
-        void append(const std::string_view& str) { append(str.data(), str.size()); }
         void append(const void* data, uint64_t len) { append((const char*)data, len); }
+        void append(const std::string_view& str) { append(str.data(), str.size()); }
         void AppendInt64(int64_t x);
         void AppendInt32(int x);
         void AppendInt16(int16_t x);
@@ -235,7 +235,6 @@ namespace kurisu {
 
     inline void Buffer::shrink(uint64_t reserve)
     {
-        // FIXME: use vector::shrink_to_fit() in C++ 11 if possible.
         Buffer other;
         other.EnsureWritableBytes(reserve);
         other.append(ToStringView());
@@ -256,10 +255,10 @@ namespace kurisu {
         }
     }
 
-    inline ssize_t Buffer::Read(int fd, int* savedErrno)  //TODO   核心代码
+    inline ssize_t Buffer::Read(int fd, int* savedErrno)
     {
-        // saved an ioctl()/FIONREAD call to tell how much to read
         char tmpBuf[65536];
+        //两个缓冲区，一个是Buffer剩余的空间，一个是tmpbuf
         iovec vec[2];
         const uint64_t writable = WritableBytes();
         vec[0].iov_base = begin() + m_writeIndex;
@@ -267,12 +266,16 @@ namespace kurisu {
         vec[1].iov_base = tmpBuf;
         vec[1].iov_len = sizeof(tmpBuf);
 
-        const int iovcnt = (writable < sizeof(tmpBuf)) ? 2 : 1;
-        const ssize_t n = detail::Readv(fd, vec, iovcnt);
+        //如果Buffer剩余空间够，就只用Buffer剩余空间，否则还加一个tmpbuf
+        const int iovecNum = (writable < sizeof(tmpBuf)) ? 2 : 1;
+        const ssize_t n = detail::Readv(fd, vec, iovecNum);
+        //错误
         if (n < 0)
             *savedErrno = errno;
+        //Buffer空间够
         else if ((uint64_t)n <= writable)
             m_writeIndex += n;
+        //Buffer空间不够
         else
         {
             m_writeIndex = m_vec.size();

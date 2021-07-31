@@ -14,14 +14,15 @@ namespace kurisu {
     public:
         explicit ThreadPool(const std::string& name = "ThreadPool") : m_name(name) {}
         ~ThreadPool();
-
         //这个函数的调用必须在SetThrdNum前，用于设置等待队列的大小
         void SetMaxQueueSize(int maxSize) { m_maxSize = maxSize; }
+        //设置线程池的大小
         void SetThrdNum(int thrdNum);
-
+        //设置创建线程池时会调用的初始化函数
         void SetThreadInitCallback(const std::function<void()>& callback) { m_thrdInitCallBack = callback; }
 
         void stop();
+        //在线程池内执行该函数
         void run(std::function<void()> func);
         void join();
 
@@ -32,7 +33,8 @@ namespace kurisu {
         //线程不安全，这个函数必须在m_mu已被锁上时才能调用
         //当 m_maxSize == 0时恒为不满
         bool full() const;
-        void RunInThread();
+        //线程池在这个函数中循环
+        void Loop();
         std::function<void()> take();
 
     private:
@@ -60,7 +62,7 @@ namespace kurisu {
         for (int i = 0; i < thrdNum; i++)
         {
             std::string id = fmt::format("{}", i + 1);
-            m_thrds.emplace_back(new Thread(std::bind(&kurisu::ThreadPool::RunInThread, this), m_name + id));  //创建线程
+            m_thrds.emplace_back(new Thread(std::bind(&kurisu::ThreadPool::Loop, this), m_name + id));  //创建线程
             m_thrds[i]->start();
         }
 
@@ -68,7 +70,7 @@ namespace kurisu {
             m_thrdInitCallBack();
     }
 
-    inline void ThreadPool::RunInThread()
+    inline void ThreadPool::Loop()
     {
         try
         {

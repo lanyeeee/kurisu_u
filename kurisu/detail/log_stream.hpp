@@ -9,6 +9,7 @@
 
 namespace kurisu {
     namespace detail {
+        //效率很高的itoa算法，比to_string快5倍以上
         template <typename T>
         inline uint64_t convert(char buf[], T value)
         {
@@ -32,7 +33,7 @@ namespace kurisu {
 
             return p - buf;
         }
-
+        //效率很高的pointer->str算法
         inline uint64_t convertHex(char buf[], uintptr_t value)
         {
             static const char digitsHex[] = "0123456789ABCDEF";
@@ -51,7 +52,6 @@ namespace kurisu {
 
             return p - buf;
         }
-
     }  // namespace detail
 
     class LogStream : uncopyable {
@@ -86,7 +86,7 @@ namespace kurisu {
 
     private:
         Buf m_buf;
-        static const int k_MaxSize = 32;
+        static const int k_MaxSize = 32;  //除const char* std::strubg std::string_view之外，一次能写入的最大字节数
     };
 
     inline LogStream& LogStream::operator<<(bool val)

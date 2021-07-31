@@ -14,7 +14,7 @@ namespace kurisu {
             ThreadData(std::function<void()> func, const std::string& name, pid_t& tid, CountDownLatch& latch)
                 : m_func(std::move(func)), m_name(name), m_tid(tid), m_latch(latch) {}
 
-            void Run();
+            void run();
 
         public:
             std::function<void()> m_func;
@@ -22,11 +22,11 @@ namespace kurisu {
             pid_t& m_tid;
             CountDownLatch& m_latch;
         };
-        inline void ThreadData::Run()
+        inline void ThreadData::run()
         {
             m_tid = this_thrd::tid();
             m_latch.CountDown();
-            this_thrd::t_threadName = m_name.empty() ? "avaThread" : m_name.c_str();
+            this_thrd::t_threadName = m_name.empty() ? "kurisuThread" : m_name.c_str();
             prctl(PR_SET_NAME, this_thrd::t_threadName);  //给线程命名
             try
             {
@@ -56,7 +56,7 @@ namespace kurisu {
             }
         }
 
-        inline void ThrdEntrance(std::shared_ptr<ThreadData> thrdData) { thrdData->Run(); }
+        inline void ThrdEntrance(std::shared_ptr<ThreadData> thrdData) { thrdData->run(); }
 
     }  // namespace detail
 }  // namespace kurisu

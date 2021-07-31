@@ -26,7 +26,7 @@ namespace kurisu {
 
         private:
             FILE* m_fp;
-            char m_buf[64 * 1024];
+            char m_buf[64 * 1024];  //正常情况下日志先写进这里,满了或者flush才往内核缓冲区写,减少系统调用
             uint64_t m_writtenBytes = 0;
         };
 
@@ -69,19 +69,18 @@ namespace kurisu {
         std::string MakeLogFileName(const std::string& basename, const Timestamp& now);
 
         const std::string m_filename;
-        const uint64_t k_RollSize;
-        const int k_FlushInterval;
-        //每写入N次就强制检查一次，与m_count配合使用
-        const int k_CheckEveryN;
+        const uint64_t k_RollSize;  //TODO   多少byte就roll一次
+        const int k_FlushInterval;  //多少秒就flush一次
+        const int k_CheckEveryN;    //每写入N次就强制检查一次，与m_count配合使用
 
-        bool m_isLocalTimeZone;
-        int m_count = 0;
-        time_t m_startOfPeriod;
-        time_t m_lastRoll = 0;
-        time_t m_lastFlush = 0;
+        bool m_isLocalTimeZone;  //是否使用本地时区
+        int m_count = 0;         //记录被写入的次数，与k_CheckEveryN配合使用
+        time_t m_day;            //第几天
+        time_t m_lastRoll = 0;   //上次roll的时间
+        time_t m_lastFlush = 0;  //上次flush的时间
         std::unique_ptr<std::mutex> m_mu;
         std::unique_ptr<detail::LogFileAppender> m_appender;
-        static const int k_OneDaySeconds = 60 * 60 * 24;
+        static const int k_OneDaySeconds = 60 * 60 * 24;  //一天有多少秒
     };
 
     inline void SyncLogFile::append(const char* logline, uint64_t len)
@@ -109,15 +108,15 @@ namespace kurisu {
         auto timestamp = Timestamp();
         time_t now = timestamp.as_time_t();
 
-        //每过0点start + 1
-        time_t start = now / k_OneDaySeconds * k_OneDaySeconds;
+        //每过0点day+1
+        time_t day = now / k_OneDaySeconds * k_OneDaySeconds;
 
         if (now > m_lastRoll)
         {
             std::string filename = MakeLogFileName(m_filename, timestamp);
             m_lastRoll = now;
             m_lastFlush = now;
-            m_startOfPeriod = start;
+            m_day = day;
             m_appender.reset(new detail::LogFileAppender(filename));
             return true;
         }
@@ -152,9 +151,9 @@ namespace kurisu {
         else if (++m_count >= k_CheckEveryN)
         {
             m_count = 0;  //如果写入次数>=这个数就重新计数
-            time_t now = time(NULL);
-            time_t thisPeriod = now / k_OneDaySeconds * k_OneDaySeconds;
-            if (thisPeriod != m_startOfPeriod)  //如果过了0点就roll
+            time_t now = time(0);
+            time_t day = now / k_OneDaySeconds * k_OneDaySeconds;
+            if (day != m_day)  //如果过了0点就roll
                 roll();
             else if (now - m_lastFlush > (time_t)k_FlushInterval)  //没过0点就flush
             {
@@ -181,22 +180,22 @@ namespace kurisu {
         using Buf = detail::FixedBuffer<detail::k_LargeBuf>;
         using BufVector = std::vector<std::unique_ptr<Buf>>;
         using BufPtr = BufVector::value_type;
-
-        void ThrdFunc();
+        //m_thrd在此函数内循环
+        void Loop();
 
     private:
-        const int k_flushInterval;
-        bool m_isLocalTimeZone;
-        std::atomic_bool m_running = false;
+        const int k_flushInterval;           //多少秒就flush一次
+        bool m_isLocalTimeZone;              //是否使用本地时区
+        std::atomic_bool m_running = false;  //是否已运行
         const std::string m_fileName;
-        const int64_t m_rollSize;
+        const int64_t m_rollSize;  //TODO   多少byte就roll一次
         Thread m_thrd;
         CountDownLatch m_latch = CountDownLatch(1);
         std::mutex m_mu;
-        std::condition_variable m_fullCond;
-        BufPtr m_thisBuf;
-        BufPtr m_nextBuf;
-        BufVector m_bufVec;
+        std::condition_variable m_fullCond;  //前端的buf是否已满
+        BufPtr m_thisBuf;                    //前端用的buf
+        BufPtr m_nextBuf;                    //前端的备用buf
+        BufVector m_bufs;                    //后端用的buf
     };
 
     inline AsyncLogFile::AsyncLogFile(const std::string& basename, int64_t rollSize, bool localTimeZone, int flushInterval)
@@ -204,13 +203,13 @@ namespace kurisu {
           m_isLocalTimeZone(localTimeZone),
           m_fileName(basename),
           m_rollSize(rollSize),
-          m_thrd(std::bind(&AsyncLogFile::ThrdFunc, this), "Async Logger"),
+          m_thrd(std::bind(&AsyncLogFile::Loop, this), "Async Logger"),
           m_thisBuf(new Buf),
           m_nextBuf(new Buf)
     {
         m_thisBuf->zero();
         m_nextBuf->zero();
-        m_bufVec.reserve(16);
+        m_bufs.reserve(16);
         Logger::SetTimeZone(m_isLocalTimeZone);
 
         m_running = true;
@@ -229,7 +228,7 @@ namespace kurisu {
             m_thisBuf->append(logline, len);
         else  //满了
         {
-            m_bufVec.push_back(std::move(m_thisBuf));  //将此buf加入待输出的队列
+            m_bufs.push_back(std::move(m_thisBuf));  //将此buf加入待输出的队列
 
             if (m_nextBuf)
                 m_thisBuf = std::move(m_nextBuf);  //拿下一个空的buf
@@ -246,7 +245,7 @@ namespace kurisu {
         m_fullCond.notify_one();
         m_thrd.join();
     }
-    inline void AsyncLogFile::ThrdFunc()
+    inline void AsyncLogFile::Loop()
     {
         m_latch.CountDown();
         SyncLogFile logFile(m_fileName, m_rollSize, m_isLocalTimeZone, false);
@@ -264,16 +263,16 @@ namespace kurisu {
             {
                 std::unique_lock locker(m_mu);
                 //经常发生的情况
-                if (m_bufVec.empty())
+                if (m_bufs.empty())
                     m_fullCond.wait_for(locker, std::chrono::seconds(k_flushInterval));  //等满的信号，最多等m_flushInterval秒
 
-                m_bufVec.push_back(std::move(m_thisBuf));  //将当前buf加入待输出的队列
-                m_thisBuf = std::move(newBuf1);            //当前buf换成一个空的buf
+                m_bufs.push_back(std::move(m_thisBuf));  //将当前buf加入待输出的队列
+                m_thisBuf = std::move(newBuf1);          //当前buf换成一个空的buf
 
 
                 //把前端的bufVec与后端的bufVec交换，
                 // 前端换上空的继续接收日志，后端来处理前端接收到的日志
-                bufVec.swap(m_bufVec);
+                bufVec.swap(m_bufs);
                 if (!m_nextBuf)                      //如果nextBuf被用了
                     m_nextBuf = std::move(newBuf2);  //就补上
             }

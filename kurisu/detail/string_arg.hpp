@@ -1,10 +1,10 @@
 #pragma once
 #include <string>
 #include <string_view>
+#include "copyable.hpp"
 
 namespace kurisu {
-    class StringArg  // copyable
-    {
+    class StringArg : copyable {
     public:
         StringArg(const char* str) : m_str(str) {}
         StringArg(const std::string& str) : m_str(str.c_str()) {}

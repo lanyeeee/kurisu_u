@@ -16,28 +16,27 @@
 namespace kurisu {
     namespace detail {
 
-        // read small file < 64KB
+        //用于读小于64KB的文件
         class ReadSmallFile : uncopyable {
         public:
-            ReadSmallFile(StringArg filename);
+            ReadSmallFile(StringArg filepath);
             ~ReadSmallFile();
-
-            // return errno
-            int readToString(int maxSize, std::string* content, int64_t* fileSize, int64_t* modifyTime, int64_t* createTime);
-
-            // return errno
-            int readToBuffer(int* size);
-
+            //把文件的数据读到传进来的std::string里 返回errno
+            int ReadToString(int maxSize, std::string& content, int64_t* fileSize, int64_t* modifyTime, int64_t* createTime);
+            //把文件的数据读到m_buf里  返回errno
+            int ReadToBuffer(int* size);
             const char* buffer() const { return m_buf; }
 
-            static const int k_BufferSize = 64 * 1024;
+            static const int k_BufferSize = 64 * 1024;  //byte
 
         private:
             int m_fd;
             int m_err;
             char m_buf[k_BufferSize];
         };
-        inline ReadSmallFile::ReadSmallFile(StringArg filename) : m_fd(::open(filename.c_str(), O_RDONLY | O_CLOEXEC)), m_err(0)
+
+
+        inline ReadSmallFile::ReadSmallFile(StringArg filepath) : m_fd(open(filepath.c_str(), O_RDONLY | O_CLOEXEC)), m_err(0)
         {
             m_buf[0] = '\0';
             if (m_fd < 0)
@@ -48,12 +47,12 @@ namespace kurisu {
             if (m_fd >= 0)
                 close(m_fd);
         }
-        inline int ReadSmallFile::readToString(int maxSize, std::string* content, int64_t* fileSize, int64_t* modifyTime, int64_t* createTime)
+        inline int ReadSmallFile::ReadToString(int maxSize, std::string& content, int64_t* fileSize, int64_t* modifyTime, int64_t* createTime)
         {
             int err = m_err;
             if (m_fd >= 0)
             {
-                content->clear();
+                content.clear();
                 if (fileSize)
                 {
                     struct stat statbuf;
@@ -62,7 +61,7 @@ namespace kurisu {
                         if (S_ISREG(statbuf.st_mode))
                         {
                             *fileSize = statbuf.st_size;
-                            content->reserve((int)std::min((int64_t)maxSize, *fileSize));
+                            content.reserve((int)std::min((int64_t)maxSize, *fileSize));
                         }
                         else if (S_ISDIR(statbuf.st_mode))
                             err = EISDIR;
@@ -75,12 +74,12 @@ namespace kurisu {
                         err = errno;
                 }
 
-                while (content->size() < (uint64_t)maxSize)
+                while (content.size() < (uint64_t)maxSize)
                 {
-                    uint64_t toRead = std::min((uint64_t)maxSize - content->size(), sizeof(m_buf));
+                    uint64_t toRead = std::min((uint64_t)maxSize - content.size(), sizeof(m_buf));
                     ssize_t n = read(m_fd, m_buf, toRead);
                     if (n > 0)
-                        content->append(m_buf, n);
+                        content.append(m_buf, n);
                     else
                     {
                         if (n < 0)
@@ -91,7 +90,7 @@ namespace kurisu {
             }
             return err;
         }
-        inline int ReadSmallFile::readToBuffer(int* size)
+        inline int ReadSmallFile::ReadToBuffer(int* size)
         {
             int err = m_err;
             if (m_fd >= 0)
@@ -109,12 +108,11 @@ namespace kurisu {
             return err;
         }
 
-
-
-        inline int ReadFile(StringArg filename, int maxSize, std::string* content, int64_t* fileSize = NULL, int64_t* modifyTime = NULL, int64_t* createTime = NULL)
+        //将filepath对应的文件读到传进来的std::string里
+        inline int ReadFile(StringArg filepath, int maxSize, std::string& content, int64_t* fileSize = nullptr, int64_t* modifyTime = nullptr, int64_t* createTime = nullptr)
         {
-            ReadSmallFile file(filename);
-            return file.readToString(maxSize, content, fileSize, modifyTime, createTime);
+            ReadSmallFile file(filepath);
+            return file.ReadToString(maxSize, content, fileSize, modifyTime, createTime);
         }
 
         inline __thread int t_numOpenedFiles = 0;
@@ -125,17 +123,17 @@ namespace kurisu {
             return 0;
         }
 
-        inline __thread std::vector<pid_t>* t_pids = NULL;
+        inline __thread std::vector<pid_t>* t_pids = nullptr;
         inline int TaskDirFilter(const struct dirent* d)
         {
             if (isdigit(d->d_name[0]))
-                detail::t_pids->push_back(atoi(d->d_name));
+                detail::t_pids->emplace_back(atoi(d->d_name));
             return 0;
         }
 
         inline int ScanDir(const char* dirpath, int (*filter)(const struct dirent*))
         {
-            struct dirent** namelist = NULL;
+            struct dirent** namelist = nullptr;
             return scandir(dirpath, &namelist, filter, alphasort);
         }
 
@@ -152,7 +150,7 @@ namespace kurisu {
         inline std::string UserName()
         {
             struct passwd pwd;
-            struct passwd* result = NULL;
+            struct passwd* result = nullptr;
             char buf[8192];
             const char* name = "unknownuser";
 
@@ -170,7 +168,7 @@ namespace kurisu {
         inline std::string ProcStatus()
         {
             std::string result;
-            detail::ReadFile("/proc/self/status", 65536, &result);
+            detail::ReadFile("/proc/self/status", 65536, result);
             return result;
         }
 
@@ -178,7 +176,7 @@ namespace kurisu {
         inline std::string ProcStat()
         {
             std::string result;
-            detail::ReadFile("/proc/self/stat", 65536, &result);
+            detail::ReadFile("/proc/self/stat", 65536, result);
             return result;
         }
 
@@ -188,7 +186,7 @@ namespace kurisu {
             char buf[64];
             fmt::format_to(buf, "/proc/self/task/{}/stat", this_thrd::tid());
             std::string result;
-            detail::ReadFile(buf, 65536, &result);
+            detail::ReadFile(buf, 65536, result);
             return result;
         }
         /// readlink /proc/self/exe

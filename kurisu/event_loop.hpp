@@ -59,9 +59,11 @@ namespace kurisu {
         //m_poller中是否有channel
         bool HasChannel(Channel* channel);
         pid_t GetThreadID() const { return m_threadID; }
+        //断言此线程是相应的IO线程
         void AssertInLoopThread();
+        //此线程是否是相应的IO线程
         bool InLoopThread() const { return m_threadID == this_thrd::tid(); }
-
+        //是否正在调用回调函数
         bool IsRunningCallback() const { return m_runningCallback; }
         //获取此线程的EventLoop
         static EventLoop* GetLoopOfThisThread();
@@ -116,7 +118,7 @@ namespace kurisu {
     class EventLoopThreadPool : uncopyable {
     public:
         EventLoopThreadPool(EventLoop* loop, const std::string& name);
-        void setThreadNum(int threadNum) { m_thrdNum = threadNum; }
+        void SetThreadNum(int threadNum) { m_thrdNum = threadNum; }
         void start(const std::function<void(EventLoop*)>& threadInitCallback = std::function<void(EventLoop*)>());
         EventLoop* GetNextLoop();
         EventLoop* GetLoopRandom();
@@ -140,7 +142,7 @@ namespace kurisu {
 
         inline const int k_PollTimeoutMs = 10000;
 
-        inline int createEventfd()
+        inline int CreateEventfd()
         {
             if (int evtfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC); evtfd < 0)
             {
@@ -204,17 +206,19 @@ namespace kurisu {
         bool IsReading() const { return m_events & k_ReadEvent; }
         //是否已注册写事件
         bool IsWriting() const { return m_events & k_WriteEvent; }
-
-        // for Poller
+        //New=-1   Added=1   Deleted=2
         int GetStatus() { return m_status; }
+        //New=-1   Added=1   Deleted=2
         void SetStatus(int status) { m_status = status; }
 
-        //DEBUG 用的
+        //DEBUG 用
         std::string ReventsString() const { return EventsToString(m_fd, m_revents); }
+        //DEBUG 用
         std::string EventsString() const { return EventsToString(m_fd, m_events); }
 
         //是否生成EPOLLHUP事件的日志
         void OnLogHup() { m_logHup = true; }
+        //是否生成EPOLLHUP事件的日志
         void OffLogHup() { m_logHup = false; }
         //返回所属的EventLoop
         EventLoop* GetLoop() { return m_loop; }
@@ -223,7 +227,6 @@ namespace kurisu {
 
     private:
         static std::string EventsToString(int fd, int ev);
-
         //加入所属的EventLoop
         void update();
         //处理到来的事件
@@ -256,15 +259,15 @@ namespace kurisu {
         using ChannelList = std::vector<Channel*>;
         Poller(EventLoop* loop) : m_epollfd(epoll_create1(EPOLL_CLOEXEC)), m_loop(loop), m_events(k_InitEventListSize) {}
         ~Poller() = default;
-        //对epoll_wait的封装
+        //对epoll_wait的封装,返回时间戳
         Timestamp poll(int timeoutMs, ChannelList* activeChannels);
         //添加channel
         void UpdateChannel(Channel* channel);
         //移除channel
         void RemoveChannel(Channel* channel);
-        //这个channel是否在map中
+        //这个channel是否在ChannelMap中
         bool HasChannel(Channel* channel) const;
-
+        //断言此线程是相应的IO线程
         void AssertInLoopThread() const { m_loop->AssertInLoopThread(); }
 
 
@@ -275,9 +278,9 @@ namespace kurisu {
         static const int k_Deleted = 2;
         static const int k_InitEventListSize = 16;  //epoll事件表的大小
 
-        static const char* OperationString(int op);
+        static const char* OperationString(int operatoin);
         //将epoll返回的到来事件加到activeChannels里
-        void CollectActiveChannels(int numEvents, ChannelList* activeChannels) const;
+        void CollectActiveChannels(int eventsNum, ChannelList* activeChannels) const;
         //注册事件,由operation决定
         void update(int operation, Channel* channel);
 
@@ -302,19 +305,21 @@ namespace kurisu {
         //可以跨线程调用
         TimerID add(std::function<void()> callback, Timestamp when, double interval);
         //可以跨线程调用
-        void cancel(TimerID id) { m_loop->run(std::bind(&TimerQueue::cancelInLoop, this, id)); }
+        void cancel(TimerID id) { m_loop->run(std::bind(&TimerQueue::CancelInLoop, this, id)); }
 
     private:
         //以下成员函数只可能在TimerQueue所属的IO线程调用，因而不用加锁
 
         void AddInLoop(Timer* timer);
-        void cancelInLoop(TimerID timerID);
+        void CancelInLoop(TimerID timerID);
+
         //当Timer触发超时时回调此函数
         void HandleTimerfd();
         //返回超时的Timer
         TimeoutTimer GetTimeout(Timestamp now);
         //重置非一次性的Timer
         void reset(TimeoutTimer& timeout);
+        //向TimerMap中插入timer
         bool insert(Timer* timer);
 
         bool runningCallback = false;
@@ -330,7 +335,7 @@ namespace kurisu {
 
 
     EventLoop::EventLoop()
-        : m_wakeUpfd(detail::createEventfd()),
+        : m_wakeUpfd(detail::CreateEventfd()),
           m_threadID(this_thrd::tid()),
           m_poller(new Poller(this)),
           timerQueue_(new TimerQueue(this)),
@@ -470,19 +475,19 @@ namespace kurisu {
                       << " was created in threadID_ = " << m_threadID
                       << ", current thread id = " << this_thrd::tid();
     }
-    inline TimerID EventLoop::runAt(Timestamp time, std::function<void()> cb)
+    inline TimerID EventLoop::runAt(Timestamp time, std::function<void()> callback)
     {
-        return timerQueue_->add(std::move(cb), time, 0.0);
+        return timerQueue_->add(std::move(callback), time, 0.0);
     }
-    inline TimerID EventLoop::runAfter(double delay, std::function<void()> cb)
+    inline TimerID EventLoop::runAfter(double delay, std::function<void()> callback)
     {
         Timestamp time(AddTime(Timestamp::now(), delay));
-        return runAt(time, std::move(cb));
+        return runAt(time, std::move(callback));
     }
-    inline TimerID EventLoop::runEvery(double interval, std::function<void()> cb)
+    inline TimerID EventLoop::runEvery(double interval, std::function<void()> callback)
     {
         Timestamp time(AddTime(Timestamp::now(), interval));
-        return timerQueue_->add(std::move(cb), time, interval);
+        return timerQueue_->add(std::move(callback), time, interval);
     }
     inline void EventLoop::cancel(TimerID timerID) { return timerQueue_->cancel(timerID); }
 
@@ -752,9 +757,9 @@ namespace kurisu {
             update(EPOLL_CTL_DEL, channel);  //就从epoll中移除
         channel->SetStatus(k_New);
     }
-    inline const char* Poller::OperationString(int op)
+    inline const char* Poller::OperationString(int operatoin)
     {
-        switch (op)
+        switch (operatoin)
         {
             case EPOLL_CTL_ADD:
                 return "ADD";
@@ -766,9 +771,9 @@ namespace kurisu {
                 return "Unknown Operation";
         }
     }
-    inline void Poller::CollectActiveChannels(int numEvents, ChannelList* activeChannels) const
+    inline void Poller::CollectActiveChannels(int eventsNum, ChannelList* activeChannels) const
     {
-        for (int i = 0; i < numEvents; ++i)
+        for (int i = 0; i < eventsNum; ++i)
         {
             Channel* channel = (Channel*)m_events[i].data.ptr;
             channel->SetRevents(m_events[i].events);
@@ -825,7 +830,7 @@ namespace kurisu {
         if (earliestChanged)
             detail::ResetTimerfd(m_timerfd, timer->GetRuntime());
     }
-    inline void TimerQueue::cancelInLoop(TimerID id)
+    inline void TimerQueue::CancelInLoop(TimerID id)
     {
         m_loop->AssertInLoopThread();
 

@@ -14,16 +14,8 @@ namespace kurisu {
         auto GetStamp() const { return m_stamp; }
         void swap(Timestamp& other) { std::swap(m_stamp, other.m_stamp); }
         bool valid() { return m_stamp != s_invalid; }
-        char* GmLogFormat(char* buf) const
-        {
-            uint64_t us = usSinceEpoch() - secondsSinceEpoch() * 1'000'000;
-            return fmt::format_to(buf, FMT_COMPILE("[{:%F %T}.{:06}] "), fmt::gmtime(m_stamp), us);
-        }
-        char* LocalLogFormat(char* buf) const
-        {
-            uint64_t us = usSinceEpoch() - secondsSinceEpoch() * 1'000'000;
-            return fmt::format_to(buf, FMT_COMPILE("[{:%F %T}.{:06}] "), fmt::localtime(m_stamp), us);
-        }
+        char* GmLogFormat(char* buf) const;
+        char* LocalLogFormat(char* buf) const;
         //format gmtime
         std::string GmFormatString() const { return fmt::format(FMT_COMPILE("{:%F %T}"), fmt::gmtime(m_stamp)); }
         //format localtime
@@ -33,18 +25,28 @@ namespace kurisu {
         int64_t secondsSinceEpoch() const;
         time_t as_time_t() { return (time_t)secondsSinceEpoch(); }
 
-        static Timestamp now() { return Timestamp(std::chrono::system_clock::now()); }
+        static Timestamp now() { return Timestamp(); }
         static Timestamp invalid() { return Timestamp(s_invalid); }
 
     private:
-        static std::chrono::system_clock::time_point s_invalid;
+        static const std::chrono::system_clock::time_point s_invalid;
         std::chrono::system_clock::time_point m_stamp;
     };
-    inline std::chrono::system_clock::time_point Timestamp::s_invalid;
+    inline const std::chrono::system_clock::time_point Timestamp::s_invalid;
 
     inline bool operator<(const Timestamp& a, const Timestamp& b) { return a.GetStamp() < b.GetStamp(); }
     inline bool operator==(const Timestamp& a, const Timestamp& b) { return a.GetStamp() == b.GetStamp(); }
 
+    inline char* Timestamp::GmLogFormat(char* buf) const
+    {
+        uint64_t us = usSinceEpoch() - secondsSinceEpoch() * 1'000'000;
+        return fmt::format_to(buf, FMT_COMPILE("[{:%F %T}.{:06}] "), fmt::gmtime(m_stamp), us);
+    }
+    inline char* Timestamp::LocalLogFormat(char* buf) const
+    {
+        uint64_t us = usSinceEpoch() - secondsSinceEpoch() * 1'000'000;
+        return fmt::format_to(buf, FMT_COMPILE("[{:%F %T}.{:06}] "), fmt::localtime(m_stamp), us);
+    }
     inline int64_t Timestamp::usSinceEpoch() const
     {
         using namespace std::chrono;

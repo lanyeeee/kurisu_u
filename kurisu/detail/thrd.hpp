@@ -20,10 +20,9 @@ namespace kurisu {
         ~Thread();
 
         void start();
-        void join() { m_thrd.join(); }  // return pthread_join()
+        void join() { m_thrd.join(); }
 
         bool started() const { return m_started; }
-        // pthread_t pthreadId() const { return pthreadId_; }
         pid_t tid() const { return m_tid; }
         const std::string& name() const { return m_name; }
 
@@ -42,6 +41,7 @@ namespace kurisu {
         static std::atomic_int32_t s_createdNum;
     };
     inline std::atomic_int32_t Thread::s_createdNum = 0;
+
     inline Thread::~Thread()
     {
         if (m_started && m_thrd.joinable())

@@ -1,4 +1,3 @@
-#include "detail/down_cast.hpp"
 #include "thread.hpp"
 #include "log.hpp"
 #include "time_stamp.hpp"
@@ -51,6 +50,7 @@ void Func()
 
 int main()
 {
+    kurisu::Timestamp::now();
     Func();
 }
 

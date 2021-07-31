@@ -7,10 +7,10 @@
 
 namespace kurisu {
     namespace detail {
-        inline __thread char t_errnobuf[512];
-        inline __thread char t_time[64];
-        inline __thread int64_t t_lastSecond;
-
+        inline __thread char t_errnobuf[512];  //缓存errno的str
+        inline __thread char t_time[64];       //缓存时间的str
+        inline __thread int64_t t_lastSecond;  //上次缓存t_time的时间
+        //生成errno的str
         inline const char* strerror_tl(int savedErrno) { return strerror_r(savedErrno, t_errnobuf, sizeof(t_errnobuf)); }
     }  // namespace detail
 
@@ -35,8 +35,6 @@ namespace kurisu {
 
         class SetLogLevel;
 
-        //using OutputFunc = void (*)(const char* msg, const uint64_t len);
-        //using FlushFunc = void (*)();
         static void SetOutput(void (*)(const char* msg, const uint64_t len));
         static void SetFlush(void (*)());
         static void SetTimeZone(bool isLocal) { s_isLocalTimeZone = isLocal; }
@@ -47,19 +45,24 @@ namespace kurisu {
             using LogLevel = Logger::LogLevel;
             Formatter(LogLevel level, int old_errno, std::string_view file, int line);
             void FormatTime();
-            void Finish();
+            void finish();
 
-            Timestamp m_time;
+            Timestamp m_time;  //要格式化的时间戳
             LogStream m_strm;
-            LogLevel m_level;
-            int m_line;
-            const char* m_fileName;
-            uint64_t m_fileNameSize;
+            LogLevel m_level;         //要格式化的日志等级
+            int m_line;               //要格式化的行号
+            const char* m_fileName;   //要格式化的日志名
+            uint64_t m_fileNameSize;  //日志名的长度
         };
-        static bool s_isLocalTimeZone;
-        Formatter m_fmt;
+
+    private:
+        static bool s_isLocalTimeZone;  //日志是否采用本地时区
+        Formatter m_fmt;                //要格式器
     };
     inline bool Logger::s_isLocalTimeZone = false;
+
+
+
 }  // namespace kurisu
 
 
@@ -128,7 +131,7 @@ namespace kurisu {
 
         m_strm << timeString;
     }
-    inline void Logger::Formatter::Finish()
+    inline void Logger::Formatter::finish()
     {
         m_strm << " - " << KnownLengthString(m_fileName, m_fileNameSize) << ':' << m_line << '\n';
     }
@@ -143,7 +146,7 @@ namespace kurisu {
     inline Logger::~Logger()
     {
         using namespace std::chrono;
-        m_fmt.Finish();
+        m_fmt.finish();
 
         const LogStream::Buf& buf(stream().buffer());
 

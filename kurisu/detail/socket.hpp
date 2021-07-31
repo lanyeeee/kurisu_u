@@ -271,7 +271,7 @@ namespace kurisu {
             memset(&oldValue, 0, sizeof(oldValue));
             newValue.it_value = HowMuchTimeFromNow(runtime);
 
-            return timerfd_settime(timerfd, 0, &newValue, &oldValue);  //FIXME
+            return timerfd_settime(timerfd, 0, &newValue, &oldValue);
         }
 
 
