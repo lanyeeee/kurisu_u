@@ -69,7 +69,7 @@ namespace kurisu {
         std::string MakeLogFileName(const std::string& basename, const Timestamp& now);
 
         const std::string m_filename;
-        const uint64_t k_RollSize;  //TODO   多少byte就roll一次
+        const uint64_t k_RollSize;  //   多少byte就roll一次
         const int k_FlushInterval;  //多少秒就flush一次
         const int k_CheckEveryN;    //每写入N次就强制检查一次，与m_count配合使用
 
@@ -188,7 +188,7 @@ namespace kurisu {
         bool m_isLocalTimeZone;              //是否使用本地时区
         std::atomic_bool m_running = false;  //是否已运行
         const std::string m_fileName;
-        const int64_t m_rollSize;  //TODO   多少byte就roll一次
+        const int64_t m_rollSize;  //  多少byte就roll一次
         Thread m_thrd;
         CountDownLatch m_latch = CountDownLatch(1);
         std::mutex m_mu;

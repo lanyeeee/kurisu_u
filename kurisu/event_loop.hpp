@@ -591,8 +591,7 @@ namespace kurisu {
         std::shared_ptr<void> guard;
         if (m_tied)
         {
-            guard = m_tie.lock();
-            if (guard)  //如果绑定的对象还活着
+            if (guard = m_tie.lock(); guard)  //如果绑定的对象还活着
                 RunCallbackWithGuard(timestamp);
         }
         else
@@ -636,7 +635,7 @@ namespace kurisu {
     {
         m_runningCallback = true;
         LOG_TRACE << ReventsString();
-        if ((m_revents & EPOLLHUP) && !(m_revents & EPOLLIN))
+        if ((m_revents & EPOLLHUP) && !(m_revents & EPOLLIN))  //客户端主动关闭(调用close)
         {
             if (m_logHup)
                 LOG_WARN << "fd = " << m_fd << " Channel::RunCallbackWithGuard() EPOLLHUP";

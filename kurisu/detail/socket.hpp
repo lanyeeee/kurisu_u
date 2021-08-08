@@ -20,7 +20,7 @@ namespace kurisu {
     class SockAddr : copyable {
     public:
         SockAddr() = default;
-        explicit SockAddr(const char* host, uint16_t port);
+        explicit SockAddr(uint16_t port, const char* host = "0.0.0.0");
         explicit SockAddr(const sockaddr& addr) : sa(addr) {}
         explicit SockAddr(const sockaddr_in& addr) : sin(addr) {}
         explicit SockAddr(const sockaddr_in6& addr) : sin6(addr) {}
@@ -35,8 +35,6 @@ namespace kurisu {
         uint16_t HostPort() const;
         uint16_t NetPort() const;
 
-
-        static bool resolve(StringArg hostname, SockAddr* result);
         void SetScopeID(uint32_t scope_id) { sin6.sin6_scope_id = scope_id; }
 
     private:
@@ -135,7 +133,7 @@ namespace kurisu {
                 LOG_SYSERR << "Sockets::ShutdownWrite";
         }
 
-        inline void IpProtToAddr(const char* host, uint16_t port, SockAddr* addr)
+        inline void IpProtToAddr(uint16_t port, const char* host, SockAddr* addr)
         {
             // addr->sin_port = htons(port);
             sockaddr_in& sin = addr->as_sockaddr_in();
@@ -280,7 +278,7 @@ namespace kurisu {
 
 
 
-    inline SockAddr::SockAddr(const char* host, uint16_t port) { detail::IpProtToAddr(host, port, this); }
+    inline SockAddr::SockAddr(uint16_t port, const char* host) { detail::IpProtToAddr(port, host, this); }
     inline std::string SockAddr::ipString() const
     {
         char buf[64] = {0};

@@ -30,8 +30,11 @@ namespace kurisu {
           m_listening(false),
           m_voidfd(open("/dev/null", O_RDONLY | O_CLOEXEC))  //预先准备一个空闲的fd
     {
-        m_sock.SetReuseAddr(true);
-        m_sock.SetReusePort(reuseport);
+        m_sock.SetReuseAddr(true);  //设置SO_REUSEADDR,如果这个端口处于TIME_WAIT,也可bind成功
+
+        m_sock.SetReusePort(reuseport);  //  设置SO_REUSEPORT,作用是支持多个进程或线程绑定到同一端口
+                                         // 内核会采用负载均衡的的方式分配客户端的连接请求给某一个进程或线程
+
         m_sock.bind((SockAddr*)&listenAddr);
         m_channel.SetReadCallback(std::bind(&Acceptor::HandleRead, this));
     }
