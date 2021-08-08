@@ -58,7 +58,7 @@ namespace kurisu {
 
         inline int MakeNonblockingSocket(sa_family_t family)
         {
-            int sockfd = socket(family, SOCK_STREAM | /*SOCK_NONBLOCK | */ SOCK_CLOEXEC, IPPROTO_TCP);
+            int sockfd = socket(family, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
             if (sockfd < 0)
                 LOG_SYSFATAL << "Socket::MakeNonblockingSocket";
             return sockfd;
@@ -80,7 +80,7 @@ namespace kurisu {
 
             //将fd直接设为非阻塞
             //FIXME  IPv6可以吗
-            int connfd = accept4(sockfd, &addr->as_sockaddr(), &addrlen, /*SOCK_NONBLOCK | */ SOCK_CLOEXEC);
+            int connfd = accept4(sockfd, &addr->as_sockaddr(), &addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC);
             if (connfd < 0)
             {
                 int savedErrno = errno;
@@ -410,10 +410,6 @@ namespace kurisu {
 #endif
     }
 
-    // inline void Socket::setKeepAlive(bool on)
-    // {
-    //     int optval = on ? 1 : 0;
-    //     setsockopt(sockfd_, SOL_SOCKET, SO_KEEPALIVE, &optval, static_cast<socklen_t>(sizeof optval));
-    // }
+
 
 }  // namespace kurisu

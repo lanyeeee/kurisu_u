@@ -259,7 +259,7 @@ namespace kurisu {
             return t;
         }
 
-        inline int numThreads()
+        inline int ThreadNum()
         {
             int result = 0;
             std::string status = ProcStatus();

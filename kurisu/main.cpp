@@ -71,33 +71,14 @@
 
 
 
-#include "detail/buffer.hpp"
-#include "server.hpp"
-#include <set>
-#include <map>
-#include <iostream>
-#include <memory>
-#include "event_loop.hpp"
 
-class Entity : boost::totally_ordered<Entity> {
-public:
-    int64_t x;
-    Entity(int x) : x(x) { std::cout << "cons\n"; }
-    ~Entity() { std::cout << "des\n"; }
-    friend bool operator<(Entity a, Entity b) { return a.x < b.x; }
-    friend bool operator==(Entity a, Entity b) { return a.x == b.x; }
-};
-
-
+#include "all.hpp"
 
 int main()
 {
     kurisu::EventLoop loop;
     kurisu::TcpServer serv(&loop, kurisu::SockAddr(5005), "serv");
-    serv.setConnectionCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn) {
-        // LOG_WARN << conn.use_count();
-    });
-    serv.setMessageCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp time) {
+    serv.setMessageCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp) {
         conn->send(buf);
     });
     serv.setThreadNum(4);
@@ -106,19 +87,6 @@ int main()
 }
 
 
-
-
-// void Fn(const std::shared_ptr<int>& p)
-// {
-//     LOG_INFO << p.use_count();
-// }
-
-// int main()
-// {
-//     std::function<void(const std::shared_ptr<int>& p)> fn = std::bind(&Fn, std::placeholders::_1);
-//     auto p = std::make_shared<int>();
-//     fn(p);
-// }
 
 
 
@@ -143,6 +111,8 @@ int main()
 
 // #include <muduo/net/TcpServer.h>
 // #include <muduo/net/EventLoop.h>
+// #include <muduo/base/ProcessInfo.h>
+// #include <muduo/base/Logging.h>
 // using namespace muduo;
 // using namespace muduo::net;
 
@@ -155,5 +125,7 @@ int main()
 //     });
 //     serv.setThreadNum(4);
 //     serv.start();
+//     sleep(2);
+//     LOG_WARN << muduo::ProcessInfo::cpuTime().total();
 //     loop.loop();
 // }
