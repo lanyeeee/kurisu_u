@@ -2547,33 +2547,33 @@ namespace kurisu {
         //设置TcpNoDelay
         void SetTcpNoDelay(bool on);
 
-        void startRead() { m_loop->run(std::bind(&TcpConnection::StartReadInLoop, this)); }
-        void stopRead() { m_loop->run(std::bind(&TcpConnection::StopReadInLoop, this)); }
+        void StartRead() { m_loop->run(std::bind(&TcpConnection::StartReadInLoop, this)); }
+        void StopRead() { m_loop->run(std::bind(&TcpConnection::StopReadInLoop, this)); }
         //线程不安全
-        bool isReading() const { return m_reading; }
+        bool IsReading() const { return m_reading; }
         //连接建立 销毁 产生关闭事件时 都会调用这个回调函数
-        void setConnectionCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback) { m_connCallback = callback; }
+        void SetConnectionCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback) { m_connCallback = callback; }
         //接收到数据之后会调用这个回调函数
-        void setMessageCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)>& callback)
+        void SetMessageCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)>& callback)
         {
             m_msgCallback = callback;
         }
         //写操作完成时会调用这个回调函数
-        void setWriteCompleteCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
+        void SetWriteCompleteCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
         {
             m_writeDoneCallback = callback;
         }
         //应用层缓冲区堆积的数据大于m_highWaterMark时调用
-        void setHighWaterMarkCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, uint64_t)>& callback, uint64_t highWaterMark)
+        void SetHighWaterMarkCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, uint64_t)>& callback, uint64_t highWaterMark)
         {
             m_highWaterMarkCallback = callback;
             m_highWaterMark = highWaterMark;
         }
 
-        Buffer* inputBuffer() { return &m_inputBuf; }
-        Buffer* outputBuffer() { return &m_outputBuf; }
+        Buffer* GetInputBuffer() { return &m_inputBuf; }
+        Buffer* GetOutputBuffer() { return &m_outputBuf; }
 
-        void setCloseCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
+        void SetCloseCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
         {
             m_closeCallback = callback;
         }
@@ -2584,10 +2584,10 @@ namespace kurisu {
         void ConnectDestroyed();
 
     private:
-        void handleRead(Timestamp receiveTime);
-        void handleWrite();
-        void handleClose();
-        void handleError();
+        void HandleRead(Timestamp receiveTime);
+        void HandleWrite();
+        void HandleClose();
+        void HandleError();
         void SendStringView(const std::string_view& msg) { SendInLoop(msg.data(), msg.size()); }
         void SendInLoop(const void* message, uint64_t len);
         void ShutdownInLoop();
@@ -2631,30 +2631,30 @@ namespace kurisu {
         TcpServer(EventLoop* loop, const SockAddr& listenAddr, const std::string& name, Option option = kNoReusePort);
         ~TcpServer();
 
-        const std::string& ipPort() const { return m_ipPort; }
+        const std::string& IpPort() const { return m_ipPort; }
         const std::string& name() const { return m_name; }
-        EventLoop* getLoop() const { return m_loop; }
+        EventLoop* GetLoop() const { return m_loop; }
         //必须在start之前调用
-        void setThreadNum(int numThreads) { m_threadPool->SetThreadNum(numThreads); }
+        void SetThreadNum(int numThreads) { m_threadPool->SetThreadNum(numThreads); }
         //必须在start之前调用
-        void setThreadInitCallback(const ThreadInitCallback& callback) { m_threadInitCallback = callback; }
+        void SetThreadInitCallback(const ThreadInitCallback& callback) { m_threadInitCallback = callback; }
         // 必须在start之后调用
-        std::shared_ptr<detail::EventLoopThreadPool> threadPool() { return m_threadPool; }
+        std::shared_ptr<detail::EventLoopThreadPool> GetThreadPool() { return m_threadPool; }
 
         //启动,线程安全
         void start();
         //连接到来或连接关闭时回调的函数,线程不安全
-        void setConnectionCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
+        void SetConnectionCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
         {
             m_connCallback = callback;
         }
         //消息到来时回调的函数,线程不安全
-        void setMessageCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)>& callback)
+        void SetMessageCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)>& callback)
         {
             m_msgCallback = callback;
         }
         //write完成时会回调的函数,线程不安全
-        void setWriteCompleteCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
+        void SetWriteDoneCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
         {
             m_writeDoneCallback = callback;
         }
@@ -2662,11 +2662,11 @@ namespace kurisu {
     private:
         using ConnectionMap = std::map<std::string, std::shared_ptr<TcpConnection>>;
         //连接到来时会回调的函数
-        void newConnection(int sockfd, const SockAddr& peerAddr);
+        void NewConnection(int sockfd, const SockAddr& peerAddr);
         //将这个TcpConnection从map中删除,线程安全
-        void removeConnection(const std::shared_ptr<TcpConnection>& conn);
+        void RemoveConnection(const std::shared_ptr<TcpConnection>& conn);
         //将这个TcpConnection从map中删除
-        void removeConnectionInLoop(const std::shared_ptr<TcpConnection>& conn);
+        void RemoveConnectionInLoop(const std::shared_ptr<TcpConnection>& conn);
 
     private:
         std::atomic_bool m_started = false;
@@ -2684,13 +2684,13 @@ namespace kurisu {
     };
 
     namespace detail {
-        void DefaultConnCallback(const std::shared_ptr<kurisu::TcpConnection>& conn)
+        inline void DefaultConnCallback(const std::shared_ptr<kurisu::TcpConnection>& conn)
         {
             LOG_TRACE << conn->LocalAddr().ipPortString() << " -> "
                       << conn->PeerAddr().ipPortString() << " is "
                       << (conn->connected() ? "Connected" : "Disconnected");
         }
-        void DefaultMsgCallback(const std::shared_ptr<kurisu::TcpConnection>&, kurisu::Buffer* buf, kurisu::Timestamp)
+        inline void DefaultMsgCallback(const std::shared_ptr<kurisu::TcpConnection>&, kurisu::Buffer* buf, kurisu::Timestamp)
         {
             buf->DropAll();
         }
@@ -3051,7 +3051,7 @@ namespace kurisu {
 
 
 
-    EventLoop::EventLoop()
+    inline EventLoop::EventLoop()
         : m_wakeUpfd(detail::CreateEventfd()),
           m_threadID(this_thrd::tid()),
           m_poller(std::make_unique<detail::Poller>(this)),
@@ -3383,7 +3383,7 @@ namespace kurisu {
 
 
 
-    TcpConnection::TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const SockAddr& localAddr, const SockAddr& peerAddr)
+    inline TcpConnection::TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const SockAddr& localAddr, const SockAddr& peerAddr)
         : m_loop(loop),
           m_highWaterMark(64 * 1024 * 1024),
           m_name(name),
@@ -3394,26 +3394,26 @@ namespace kurisu {
           m_localAddr(localAddr),
           m_peerAddr(peerAddr)
     {
-        m_channel->SetReadCallback(std::bind(&TcpConnection::handleRead, this, std::placeholders::_1));
-        m_channel->SetWriteCallback(std::bind(&TcpConnection::handleWrite, this));
-        m_channel->SetCloseCallback(std::bind(&TcpConnection::handleClose, this));
-        m_channel->SetErrorCallback(std::bind(&TcpConnection::handleError, this));
+        m_channel->SetReadCallback(std::bind(&TcpConnection::HandleRead, this, std::placeholders::_1));
+        m_channel->SetWriteCallback(std::bind(&TcpConnection::HandleWrite, this));
+        m_channel->SetCloseCallback(std::bind(&TcpConnection::HandleClose, this));
+        m_channel->SetErrorCallback(std::bind(&TcpConnection::HandleError, this));
         LOG_DEBUG << "TcpConnection::ctor[" << m_name << "] at " << this << " fd=" << sockfd;
     }
-    TcpConnection::~TcpConnection()
+    inline TcpConnection::~TcpConnection()
     {
         LOG_DEBUG << "TcpConnection::~TcpConnection [" << m_name << "] at " << this
                   << " fd=" << m_channel->fd()
                   << " state=" << StatusToString();
     }
-    std::string TcpConnection::GetTcpInfoString() const
+    inline std::string TcpConnection::GetTcpInfoString() const
     {
         char buf[1024];
         buf[0] = '\0';
         m_socket->GetTcpInfoString(buf);
         return buf;
     }
-    void TcpConnection::send(std::string&& msg)
+    inline void TcpConnection::send(std::string&& msg)
     {
         if (m_status == k_Connected)
         {
@@ -3424,7 +3424,7 @@ namespace kurisu {
                 m_loop->AddExtraFunc(std::bind(&TcpConnection::SendStringView, this, msg));
         }
     }
-    void TcpConnection::send(const std::string_view& msg)
+    inline void TcpConnection::send(const std::string_view& msg)
     {
         if (m_status == k_Connected)
         {
@@ -3435,7 +3435,7 @@ namespace kurisu {
                 m_loop->AddExtraFunc(std::bind(&TcpConnection::SendStringView, this, std::string(msg)));
         }
     }
-    void TcpConnection::send(Buffer* buf)
+    inline void TcpConnection::send(Buffer* buf)
     {
         if (m_status == k_Connected)
         {
@@ -3449,7 +3449,7 @@ namespace kurisu {
                 m_loop->AddExtraFunc(std::bind(&TcpConnection::SendStringView, this, buf->RetrieveAllAsString()));
         }
     }
-    void TcpConnection::shutdown()
+    inline void TcpConnection::shutdown()
     {
         if (m_status == k_Connected)
         {
@@ -3457,7 +3457,7 @@ namespace kurisu {
             m_loop->run(std::bind(&TcpConnection::ShutdownInLoop, shared_from_this()));
         }
     }
-    void TcpConnection::ForceClose()
+    inline void TcpConnection::ForceClose()
     {
         if (m_status == k_Connected || m_status == k_Disconnecting)
         {
@@ -3465,7 +3465,7 @@ namespace kurisu {
             m_loop->AddExtraFunc(std::bind(&TcpConnection::ForceCloseInLoop, shared_from_this()));
         }
     }
-    void TcpConnection::ForceCloseWithDelay(double seconds)
+    inline void TcpConnection::ForceCloseWithDelay(double seconds)
     {
         if (m_status == k_Connected || m_status == k_Disconnecting)
         {
@@ -3473,7 +3473,7 @@ namespace kurisu {
             m_loop->runAfter(seconds, detail::MakeWeakCallback(shared_from_this(), &TcpConnection::ForceClose));
         }
     }
-    void TcpConnection::ConnectEstablished()
+    inline void TcpConnection::ConnectEstablished()
     {
         m_loop->AssertInLoopThread();
         m_status = k_Connected;
@@ -3481,7 +3481,7 @@ namespace kurisu {
         m_channel->OnReading();              //将channel添加到Poller中
         m_connCallback(shared_from_this());  //调用用户注册的回调函数
     }
-    void TcpConnection::ConnectDestroyed()
+    inline void TcpConnection::ConnectDestroyed()
     {
         m_loop->AssertInLoopThread();
         if (m_status == k_Connected)
@@ -3492,7 +3492,7 @@ namespace kurisu {
         }
         m_channel->remove();
     }
-    void TcpConnection::handleRead(Timestamp receiveTime)
+    inline void TcpConnection::HandleRead(Timestamp receiveTime)
     {
         m_loop->AssertInLoopThread();
         int savedErrno = 0;
@@ -3501,15 +3501,15 @@ namespace kurisu {
         if (n > 0)  //读成功就调用用户设置的回调函数
             m_msgCallback(shared_from_this(), &m_inputBuf, receiveTime);
         else if (n == 0)  //说明对方调用了close()
-            handleClose();
+            HandleClose();
         else  //出错
         {
             errno = savedErrno;
             LOG_SYSERR << "TcpConnection::handleRead";
-            handleError();
+            HandleError();
         }
     }
-    void TcpConnection::handleWrite()
+    inline void TcpConnection::HandleWrite()
     {
         m_loop->AssertInLoopThread();
         if (m_channel->IsWriting())
@@ -3537,7 +3537,7 @@ namespace kurisu {
         else
             LOG_TRACE << "Connection fd = " << m_channel->fd() << " is down, no more writing";
     }
-    void TcpConnection::handleClose()
+    inline void TcpConnection::HandleClose()
     {
         m_loop->AssertInLoopThread();
         LOG_TRACE << "fd = " << m_channel->fd() << " state = " << StatusToString();
@@ -3551,12 +3551,12 @@ namespace kurisu {
         m_connCallback(guard);
         m_closeCallback(guard);
     }
-    void TcpConnection::handleError()
+    inline void TcpConnection::HandleError()
     {
         int err = detail::GetSocketError(m_channel->fd());
         LOG_ERROR << "TcpConnection::handleError [" << m_name << "] - SO_ERROR = " << err << " " << detail::strerror_tl(err);
     }
-    void TcpConnection::SendInLoop(const void* data, size_t len)
+    inline void TcpConnection::SendInLoop(const void* data, size_t len)
     {
         m_loop->AssertInLoopThread();
         ssize_t nwrote = 0;
@@ -3606,19 +3606,19 @@ namespace kurisu {
                 m_channel->OnWriting();
         }
     }
-    void TcpConnection::ShutdownInLoop()
+    inline void TcpConnection::ShutdownInLoop()
     {
         m_loop->AssertInLoopThread();
         if (!m_channel->IsWriting())
             m_socket->ShutdownWrite();
     }
-    void TcpConnection::ForceCloseInLoop()
+    inline void TcpConnection::ForceCloseInLoop()
     {
         m_loop->AssertInLoopThread();
         if (m_status == k_Connected || m_status == k_Disconnecting)
-            handleClose();
+            HandleClose();
     }
-    const char* TcpConnection::StatusToString() const
+    inline const char* TcpConnection::StatusToString() const
     {
         switch (m_status)
         {
@@ -3634,7 +3634,7 @@ namespace kurisu {
                 return "unknown status";
         }
     }
-    void TcpConnection::StartReadInLoop()
+    inline void TcpConnection::StartReadInLoop()
     {
         m_loop->AssertInLoopThread();
         if (!m_reading || !m_channel->IsReading())
@@ -3643,7 +3643,7 @@ namespace kurisu {
             m_reading = true;
         }
     }
-    void TcpConnection::StopReadInLoop()
+    inline void TcpConnection::StopReadInLoop()
     {
         m_loop->AssertInLoopThread();
         if (m_reading || m_channel->IsReading())
@@ -3655,7 +3655,7 @@ namespace kurisu {
 
 
 
-    TcpServer::TcpServer(EventLoop* loop, const SockAddr& listenAddr, const std::string& name, Option option)
+    inline TcpServer::TcpServer(EventLoop* loop, const SockAddr& listenAddr, const std::string& name, Option option)
         : m_nextConnID(1),
           m_acceptor(std::make_unique<detail::Acceptor>(loop, listenAddr, option == kReusePort)),
           m_loop(loop),
@@ -3666,9 +3666,9 @@ namespace kurisu {
           m_msgCallback(detail::DefaultMsgCallback)
     {
         using namespace std::placeholders;
-        m_acceptor->SetConnectionCallback(std::bind(&TcpServer::newConnection, this, _1, _2));
+        m_acceptor->SetConnectionCallback(std::bind(&TcpServer::NewConnection, this, _1, _2));
     }
-    void TcpServer::start()
+    inline void TcpServer::start()
     {
         if (!m_started)
         {
@@ -3677,7 +3677,7 @@ namespace kurisu {
             m_loop->run(std::bind(&detail::Acceptor::listen, m_acceptor.get()));
         }
     }
-    TcpServer::~TcpServer()
+    inline TcpServer::~TcpServer()
     {
         m_loop->AssertInLoopThread();
         LOG_TRACE << "TcpServer::~TcpServer [" << m_name << "] destructing";
@@ -3689,7 +3689,7 @@ namespace kurisu {
             conn->GetLoop()->run(std::bind(&TcpConnection::ConnectDestroyed, conn));
         }
     }
-    void TcpServer::newConnection(int sockfd, const SockAddr& peerAddr)
+    inline void TcpServer::NewConnection(int sockfd, const SockAddr& peerAddr)
     {
         m_loop->AssertInLoopThread();
         EventLoop* ioLoop = m_threadPool->GetNextLoop();  //取出一个EventLoop
@@ -3705,14 +3705,14 @@ namespace kurisu {
         auto& conn = m_connections[connName] = std::make_shared<TcpConnection>(ioLoop, connName, sockfd, localAddr, peerAddr);
 
         //TcpServer将所有回调函数都传给新的TcpConnection
-        conn->setConnectionCallback(m_connCallback);
-        conn->setMessageCallback(m_msgCallback);
-        conn->setWriteCompleteCallback(m_writeDoneCallback);
+        conn->SetConnectionCallback(m_connCallback);
+        conn->SetMessageCallback(m_msgCallback);
+        conn->SetWriteCompleteCallback(m_writeDoneCallback);
         //关闭回调函数,作用是将这个关闭的TcpConnection从map中删除
-        conn->setCloseCallback(std::bind(&TcpServer::removeConnection, this, std::placeholders::_1));
+        conn->SetCloseCallback(std::bind(&TcpServer::RemoveConnection, this, std::placeholders::_1));
         ioLoop->run(std::bind(&TcpConnection::ConnectEstablished, std::ref(conn)));
     }
-    void TcpServer::removeConnection(const std::shared_ptr<TcpConnection>& conn)
+    inline void TcpServer::RemoveConnection(const std::shared_ptr<TcpConnection>& conn)
     {
         // FIXME 不安全
         //因为调用TcpServer::removeConnection的线程是TcpConnection所在的EventLoop
@@ -3720,9 +3720,9 @@ namespace kurisu {
         //如果这个EventLoop对这个this指针做修改,就可能会导致TcpServer出错
         //所以理论上是不安全的,但其实并没有修改,而是立刻进入到TcpServer的EventLoop,所以其实是安全的
         //硬要说不安全,只有下面这一句话理论上不安全(其实也安全),其他全都是安全的
-        m_loop->run(std::bind(&TcpServer::removeConnectionInLoop, this, conn));
+        m_loop->run(std::bind(&TcpServer::RemoveConnectionInLoop, this, conn));
     }
-    void TcpServer::removeConnectionInLoop(const std::shared_ptr<TcpConnection>& conn)
+    inline void TcpServer::RemoveConnectionInLoop(const std::shared_ptr<TcpConnection>& conn)
     {
         m_loop->AssertInLoopThread();
 

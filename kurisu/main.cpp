@@ -1,5 +1,5 @@
 // #include "thread.hpp"
-// #include "log.hpp"
+// #include "logger.hpp"
 // #include "time_stamp.hpp"
 // #include <map>
 // #include <set>
@@ -74,14 +74,19 @@
 
 #include "all.hpp"
 
+kurisu::AsyncLogFile logger("hh", 100 * 1024 * 1024, 1);
+
 int main()
 {
+    kurisu::Logger::SetTimeZone(1);
+    kurisu::Logger::SetOutput([](const char* msg, uint64_t len) { logger.append(msg, len); });
     kurisu::EventLoop loop;
     kurisu::TcpServer serv(&loop, kurisu::SockAddr(5005), "serv");
-    serv.setMessageCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp) {
+    serv.SetMessageCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp) {
         conn->send(buf);
     });
-    serv.setThreadNum(4);
+    kurisu::Timestamp now;
+    LOG_INFO << now.LocalFormatString();
     serv.start();
     loop.loop();
 }
@@ -111,10 +116,10 @@ int main()
 
 // #include <muduo/net/TcpServer.h>
 // #include <muduo/net/EventLoop.h>
-// #include <muduo/base/ProcessInfo.h>
-// #include <muduo/base/Logging.h>
 // using namespace muduo;
 // using namespace muduo::net;
+
+
 
 // int main()
 // {
@@ -123,9 +128,6 @@ int main()
 //     serv.setMessageCallback([](const TcpConnectionPtr& conn, Buffer* buf, Timestamp time) {
 //         conn->send(buf);
 //     });
-//     serv.setThreadNum(4);
 //     serv.start();
-//     sleep(2);
-//     LOG_WARN << muduo::ProcessInfo::cpuTime().total();
 //     loop.loop();
 // }
