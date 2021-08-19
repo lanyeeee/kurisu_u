@@ -79,7 +79,10 @@
         "valarray": "cpp",
         "*.ipp": "cpp",
         "strstream": "cpp",
-        "future": "cpp"
+        "future": "cpp",
+        "cassert": "cpp",
+        "filesystem": "cpp",
+        "any": "cpp"
     },
     "sqltools.connections": [
         {

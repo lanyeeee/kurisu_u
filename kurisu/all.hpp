@@ -128,7 +128,7 @@ namespace kurisu {
         }  // namespace detail
 
         inline __thread int t_cachedTid;  //tid的缓存，提高效率(不用每次都调用系统函数)
-        inline __thread char t_tidString[32];
+        inline __thread char t_tidString[32] = {0};
         inline __thread int t_tidStringLength;
         inline __thread const char* t_threadName;
 
@@ -322,7 +322,7 @@ namespace kurisu {
             void IndexShiftRight(uint64_t num) { m_index += num; }
             char* index() { return m_index; }
             void reset() { m_index = m_data; }
-            void zero() { memset(m_data, 0, SIZE); }
+            void zero() { bzero(m_data, SIZE); }
             std::string String() const { return std::string(m_data, size()); }
             std::string_view StringView() const { return std::string_view(m_data, size()); }
             uint64_t AvalibleSize() { return (uint64_t)(end() - m_index); }
@@ -675,6 +675,7 @@ namespace kurisu {
             for (int i = 0; i < thrdNum; i++)
             {
                 std::string id = fmt::format("{}", i + 1);
+                auto res = m_name + id;
                 m_thrds.emplace_back(std::make_unique<Thread>(std::bind(&kurisu::detail::ThreadPool::Loop, this), m_name + id));  //创建线程
                 m_thrds[i]->start();
             }
@@ -1046,7 +1047,7 @@ namespace kurisu {
         // read /proc/self/task/tid/stat
         inline std::string ThreadStat()
         {
-            char buf[64];
+            char buf[64] = {0};
             fmt::format_to(buf, "/proc/self/task/{}/stat", this_thrd::tid());
             std::string result;
             detail::ReadFile(buf, 65536, result);
@@ -1299,11 +1300,6 @@ namespace kurisu {
             return connfd;
         }
 
-        inline ssize_t Read(int sockfd, void* buf, uint64_t count) { return read(sockfd, buf, count); }
-
-        inline ssize_t Readv(int sockfd, const struct iovec* iov, int iovcnt) { return readv(sockfd, iov, iovcnt); }
-
-        inline ssize_t Write(int sockfd, const void* buf, uint64_t count) { return write(sockfd, buf, count); }
 
         inline void Close(int sockfd)
         {
@@ -1388,7 +1384,7 @@ namespace kurisu {
         inline SockAddr GetLocalAddr(int sockfd)
         {
             SockAddr localaddr;
-            memset(&localaddr, 0, sizeof(SockAddr));
+            bzero(&localaddr, sizeof(SockAddr));
             socklen_t addrlen = sizeof(SockAddr);
             if (getsockname(sockfd, &localaddr.as_sockaddr(), &addrlen) < 0)
                 LOG_SYSERR << "Sockets::GetLocalAddr";
@@ -1397,7 +1393,7 @@ namespace kurisu {
         inline SockAddr GetPeerAddr(int sockfd)
         {
             SockAddr peeraddr;
-            memset(&peeraddr, 0, sizeof(SockAddr));
+            bzero(&peeraddr, sizeof(SockAddr));
             socklen_t addrlen = sizeof(SockAddr);
             if (getpeername(sockfd, &peeraddr.as_sockaddr(), &addrlen) < 0)
                 LOG_SYSERR << "Sockets::GetPeerAddr";
@@ -1449,8 +1445,8 @@ namespace kurisu {
         {
             itimerspec newValue;
             itimerspec oldValue;
-            memset(&newValue, 0, sizeof(newValue));
-            memset(&oldValue, 0, sizeof(oldValue));
+            bzero(&newValue, sizeof(newValue));
+            bzero(&oldValue, sizeof(oldValue));
             newValue.it_value = HowMuchTimeFromNow(runtime);
 
             return timerfd_settime(timerfd, 0, &newValue, &oldValue);
@@ -1500,7 +1496,7 @@ namespace kurisu {
         inline bool Socket::GetTcpInfo(tcp_info* tcpi) const
         {
             socklen_t len = sizeof(*tcpi);
-            memset(tcpi, 0, len);
+            bzero(tcpi, len);
             return getsockopt(m_fd, SOL_TCP, TCP_INFO, tcpi, &len) == 0;
         }
         inline bool Socket::GetTcpInfoString(char* buf) const
@@ -1666,7 +1662,8 @@ namespace kurisu {
         ChannelList m_activeChannels;                      // 保存所有有事件到来的channel
 
         //EventLoop线程每次轮询除了执行有事件到来的channel的回调函数外，也会执行这个vector内的函数（额外的任务）
-        std::vector<std::function<void()>> m_ExtraFuncs;
+        std::vector<std::function<void()>> m_waitingExtraFuncs;
+        std::vector<std::function<void()>> m_runningExtraFuncs;
         mutable std::mutex m_mu;  //保护m_ExtraFuncs;
     };
 
@@ -1829,11 +1826,10 @@ namespace kurisu {
 
         class Poller : uncopyable {
         public:
-            using ChannelList = std::vector<Channel*>;
             Poller(EventLoop* loop) : m_epollfd(epoll_create1(EPOLL_CLOEXEC)), m_loop(loop), m_events(k_InitEventListSize) {}
             ~Poller() = default;
             //对epoll_wait的封装,返回时间戳
-            Timestamp poll(int timeoutMs, ChannelList* activeChannels);
+            Timestamp poll(int timeoutMs, std::vector<Channel*>* activeChannels);
             //添加channel
             void UpdateChannel(Channel* channel);
             //移除channel
@@ -1852,18 +1848,13 @@ namespace kurisu {
             static const int k_InitEventListSize = 16;  //epoll事件表的大小
 
             static const char* OperationString(int operatoin);
-            //将epoll返回的到来事件加到activeChannels里
-            void CollectActiveChannels(int eventsNum, ChannelList* activeChannels) const;
             //注册事件,由operation决定
             void update(int operation, Channel* channel);
 
-            using EventList = std::vector<epoll_event>;
-            using ChannelMap = std::map<int, Channel*>;
-
             int m_epollfd;
-            EventLoop* m_loop;      //指向所属的EventLoop
-            EventList m_events;     //epoll事件数组
-            ChannelMap m_channels;  //存储channel的map
+            EventLoop* m_loop;                   //指向所属的EventLoop
+            std::vector<epoll_event> m_events;   //epoll事件数组
+            std::map<int, Channel*> m_channels;  //存储channel的map
         };
 
         class TimerQueue : uncopyable {
@@ -2003,7 +1994,7 @@ namespace kurisu {
             //创建m_thrdNum个线程，每个线程都用threadInitCallback进行初始化
             for (int i = 0; i < m_thrdNum; i++)
             {
-                char name[m_name.size() + 32];
+                char name[m_name.size() + 32] = {0};
                 fmt::format_to(name, "{}{}", m_name.c_str(), i);
                 EventLoopThread* p = new EventLoopThread(threadInitCallback, name);
                 m_thrds.emplace_back(std::unique_ptr<EventLoopThread>(p));
@@ -2046,10 +2037,9 @@ namespace kurisu {
 
         inline void Channel::RunCallback(Timestamp timestamp)
         {
-            std::shared_ptr<void> guard;
             if (m_tied)
             {
-                if (guard = m_tie.lock(); guard)  //如果绑定的对象还活着
+                if (std::shared_ptr<void> guard = m_tie.lock(); guard)  //如果绑定的对象还活着
                     RunCallbackWithGuard(timestamp);
             }
             else
@@ -2145,20 +2135,27 @@ namespace kurisu {
 
 
 
-        inline Timestamp Poller::poll(int timeoutMs, ChannelList* activeChannels)
+        inline Timestamp Poller::poll(int timeoutMs, std::vector<Channel*>* activeChannels)
         {
             LOG_TRACE << "fd total count " << m_channels.size();
-            int numEvents = epoll_wait(m_epollfd, &*m_events.begin(), (int)m_events.size(), timeoutMs);
+            activeChannels->clear();  //删除所有active channel
+            int eventsNum = epoll_wait(m_epollfd, &*m_events.begin(), (int)m_events.size(), timeoutMs);
+
             int tmpErrno = errno;
             Timestamp now;
-            if (numEvents > 0)
+            if (eventsNum > 0)
             {
-                LOG_TRACE << numEvents << " events happened";
-                CollectActiveChannels(numEvents, activeChannels);
-                if ((uint64_t)numEvents == m_events.size())
+                LOG_TRACE << eventsNum << " events happened";
+                for (int i = 0; i < eventsNum; i++)
+                {
+                    Channel* channel = (Channel*)m_events[i].data.ptr;
+                    channel->SetRevents(m_events[i].events);
+                    activeChannels->emplace_back(channel);
+                }
+                if ((uint64_t)eventsNum == m_events.size())
                     m_events.resize(m_events.size() * 2);  //说明m_events的大小要不够用了，扩容
             }
-            else if (numEvents == 0)
+            else if (eventsNum == 0)
             {
                 LOG_TRACE << "nothing happened";
             }
@@ -2228,19 +2225,10 @@ namespace kurisu {
                     return "Unknown Operation";
             }
         }
-        inline void Poller::CollectActiveChannels(int eventsNum, ChannelList* activeChannels) const
-        {
-            for (int i = 0; i < eventsNum; ++i)
-            {
-                Channel* channel = (Channel*)m_events[i].data.ptr;
-                channel->SetRevents(m_events[i].events);
-                activeChannels->emplace_back(channel);
-            }
-        }
         inline void Poller::update(int operation, Channel* channel)
         {
             epoll_event event;
-            memset(&event, 0, sizeof(event));
+            bzero(&event, sizeof(event));
             event.events = channel->GetEvents();
             event.data.ptr = channel;  //这一步使得在epoll_wait返回时能通过data.ptr访问对应的channel
             int fd = channel->fd();
@@ -2417,7 +2405,7 @@ namespace kurisu {
             }
             else  //FIXME  因为epoll不是ET模式，需要这样来防止因fd过多处理不了而导致epoll繁忙
             {
-                LOG_SYSERR << "in Acceptor::handleRead";
+                LOG_SYSERR << "in Acceptor::HandleRead";
                 if (errno == EMFILE)  //打开了过多了fd,超过了允许的范围
                 {
                     detail::Close(m_voidfd);
@@ -2431,38 +2419,49 @@ namespace kurisu {
     }  // namespace detail
 
     class Buffer : detail::copyable {
+    private:
+        struct Buf {
+            uint64_t len;
+            char* ptr[0];
+        };
+
     public:
         static const uint64_t k_PrependSize = 8;
         static const uint64_t k_InitSize = 1024;
 
-        explicit Buffer(uint64_t initialSize = k_InitSize)
-            : m_vec(k_PrependSize + initialSize), m_readIndex(k_PrependSize), m_writeIndex(k_PrependSize) {}
+        explicit Buffer(uint64_t initialSize = k_InitSize) : m_readIndex(k_PrependSize), m_writeIndex(k_PrependSize)
+        {
+            m_buf = std::unique_ptr<Buf>((Buf*)malloc(sizeof(Buf) + k_PrependSize + initialSize));
+            m_buf->len = k_PrependSize + initialSize;
+        }
 
         void swap(Buffer& other);
+        void resize(uint64_t size);
+        uint64_t size() { return m_buf->len - k_PrependSize; }
 
         uint64_t ReadableBytes() const { return m_writeIndex - m_readIndex; }
-        uint64_t WritableBytes() const { return m_vec.size() - m_writeIndex; }
+        uint64_t WriteableBytes() const { return m_buf->len - m_writeIndex; }
         uint64_t PrependableBytes() const { return m_readIndex; }
 
 
         const char* FindCRLF() const;
         const char* FindCRLF(const char* start) const;
-        const char* FindEOL() const { return (const char*)memchr(BeginRead(), '\n', ReadableBytes()); }
-        const char* FindEOL(const char* start) const { return (const char*)memchr(start, '\n', BeginWrite() - start); }
+        const char* FindEOL() const { return (const char*)memchr(ReadIndex(), '\n', ReadableBytes()); }
+        const char* FindEOL(const char* start) const { return (const char*)memchr(start, '\n', WriteIndex() - start); }
 
         void drop(uint64_t len);
-        void DropUntil(const char* end) { drop(end - BeginRead()); }
+        void DropUntil(const char* end) { drop(end - ReadIndex()); }
         void DropInt64() { drop(sizeof(int64_t)); }
         void DropInt32() { drop(sizeof(int)); }
         void DropInt16() { drop(sizeof(int16_t)); }
         void DropInt8() { drop(sizeof(int8_t)); }
-        void DropAll();
+        void DropAll() { m_readIndex = m_writeIndex = k_PrependSize; }
 
         std::string RetrieveAllAsString() { return RetrieveAsString(ReadableBytes()); }
         std::string RetrieveAsString(uint64_t len);
 
-        std::string_view ToStringView() const { return std::string_view(BeginRead(), ReadableBytes()); }
-        std::string ToString() const { return std::string(BeginRead(), ReadableBytes()); }
+        std::string_view ToStringView() const { return std::string_view(ReadIndex(), ReadableBytes()); }
+        std::string ToString() const { return std::string(ReadIndex(), ReadableBytes()); }
 
         void append(const char* data, uint64_t len);
         void append(const void* data, uint64_t len) { append((const char*)data, len); }
@@ -2472,9 +2471,9 @@ namespace kurisu {
         void AppendInt16(int16_t x);
         void AppendInt8(int8_t x) { append(&x, sizeof(x)); }
 
-        const char* BeginRead() const { return begin() + m_readIndex; }
-        char* BeginWrite() { return begin() + m_writeIndex; }
-        const char* BeginWrite() const { return begin() + m_writeIndex; }
+        const char* ReadIndex() const { return begin() + m_readIndex; }
+        char* WriteIndex() { return begin() + m_writeIndex; }
+        const char* WriteIndex() const { return begin() + m_writeIndex; }
 
         int64_t ReadInt64();
         int ReadInt32();
@@ -2484,7 +2483,7 @@ namespace kurisu {
         int64_t PeekInt64() const;
         int PeekInt32() const;
         int16_t PeekInt16() const;
-        int8_t PeekInt8() const { return *BeginRead(); }
+        int8_t PeekInt8() const { return *ReadIndex(); }
 
         void PrependInt64(int64_t x);
         void PrependInt32(int x);
@@ -2493,27 +2492,30 @@ namespace kurisu {
 
         void shrink(uint64_t reserve);
 
-        uint64_t capacity() const { return m_vec.capacity(); }
+        uint64_t capacity() const { return m_buf->len; }
 
-        ssize_t Read(int fd, int* savedErrno);
+        ssize_t ReadSocket(int fd, int* savedErrno);
 
     private:
         void prepend(const void* data, uint64_t len);
         void EnsureWritableBytes(uint64_t len);
         void WriteIndexRightShift(uint64_t len) { m_writeIndex += len; }
         void WriteIndexLeftShift(uint64_t len) { m_writeIndex -= len; }
-        char* begin() { return &*m_vec.begin(); }
-        const char* begin() const { return &*m_vec.begin(); }
+        char* begin() { return (char*)m_buf->ptr; }
+        const char* begin() const { return (const char*)m_buf->ptr; }
         void MakeSpace(uint64_t len);
+        ssize_t Read(int fd, int* savedErrno);
+        ssize_t Readv(int fd, int* savedErrno);
 
     private:
-        std::vector<char> m_vec;
         uint64_t m_readIndex;   //从这里开始读
         uint64_t m_writeIndex;  //从这里开始写
+        std::unique_ptr<Buf> m_buf;
 
         static const char k_CRLF[];
     };
     inline const char Buffer::k_CRLF[] = "\r\n";
+
 
     class TcpConnection : detail::uncopyable, public std::enable_shared_from_this<TcpConnection> {
     public:
@@ -3065,6 +3067,8 @@ namespace kurisu {
             detail::t_loopOfThisThread = this;
         m_wakeUpChannel->SetReadCallback(std::bind(&EventLoop::WakeUpRead, this));  //以便调用quit时唤醒loop
         m_wakeUpChannel->OnReading();
+        m_runningExtraFuncs.reserve(4);
+        m_waitingExtraFuncs.reserve(4);
     }
     inline EventLoop::~EventLoop()
     {
@@ -3084,15 +3088,12 @@ namespace kurisu {
 
         while (!m_quit)
         {
-            m_activeChannels.clear();  //删除所有active channel
-
             //没事的时候loop会阻塞在这里
             m_returnTime = m_poller->poll(detail::k_PollTimeoutMs, &m_activeChannels);
-            ++m_loopNum;
+            m_loopNum++;
 
             if (Logger::level() <= Logger::LogLevel::TRACE)
                 PrintActiveChannels();  //将发生的事件写入日志
-
             m_runningCallback = true;
             //执行每个有事件到来的channel的回调函数
             for (auto&& channel : m_activeChannels)
@@ -3102,7 +3103,6 @@ namespace kurisu {
             m_runningCallback = false;
             RunExtraFunc();  //执行额外的回调函数
         }
-
         LOG_TRACE << "EventLoop " << this << " stop looping";
         m_looping = false;
     }
@@ -3123,7 +3123,7 @@ namespace kurisu {
     {
         {
             std::lock_guard lock(m_mu);
-            m_ExtraFuncs.emplace_back(std::move(callback));
+            m_waitingExtraFuncs.emplace_back(std::move(callback));
         }
 
         if (!InLoopThread() || m_runningExtraFunc)
@@ -3132,12 +3132,12 @@ namespace kurisu {
     inline uint64_t EventLoop::GetExtraFuncsNum() const
     {
         std::lock_guard lock(m_mu);
-        return m_ExtraFuncs.size();
+        return m_waitingExtraFuncs.size();
     }
     inline void EventLoop::wakeup()
     {
         uint64_t one = 1;
-        ssize_t n = detail::Write(m_wakeUpfd, &one, sizeof(one));
+        ssize_t n = write(m_wakeUpfd, &one, sizeof(one));
         if (n != sizeof(one))
             LOG_ERROR << "EventLoop::wakeup() writes " << n << " bytes instead of 8";
     }
@@ -3160,24 +3160,25 @@ namespace kurisu {
     inline void EventLoop::WakeUpRead()
     {
         uint64_t one = 1;
-        ssize_t n = detail::Read(m_wakeUpfd, &one, sizeof one);
+        ssize_t n = read(m_wakeUpfd, &one, sizeof one);
         if (n != sizeof(one))
             LOG_ERROR << "EventLoop::WakeUpRead() reads " << n << " bytes instead of 8";
     }
     inline void EventLoop::RunExtraFunc()
     {
-        std::vector<std::function<void()>> functors;
-        m_runningExtraFunc = true;
-
+        if (m_waitingExtraFuncs.empty())
+            return;
+        else
         {
+            m_runningExtraFunc = true;
             std::lock_guard lock(m_mu);
-            functors.swap(m_ExtraFuncs);
+            m_runningExtraFuncs.swap(m_waitingExtraFuncs);
         }
         //既减少了持有锁的时间，也防止了死锁(func里可能也调用了RunExtraFunc()
 
-        for (auto&& func : functors)
+        for (auto&& func : m_runningExtraFuncs)
             func();
-
+        m_runningExtraFuncs.clear();
         m_runningExtraFunc = false;
     }
     inline void EventLoop::PrintActiveChannels() const
@@ -3212,47 +3213,47 @@ namespace kurisu {
 
     inline void Buffer::swap(Buffer& other)
     {
-        m_vec.swap(other.m_vec);
+        std::swap(m_buf, other.m_buf);
         std::swap(m_readIndex, other.m_readIndex);
         std::swap(m_writeIndex, other.m_writeIndex);
     }
+    inline void Buffer::resize(uint64_t new_size)
+    {
+        m_buf = std::unique_ptr<Buf>((Buf*)realloc(m_buf.release(), sizeof(Buf) + k_PrependSize + new_size));
+        m_buf->len = k_PrependSize + new_size;
+    }
     inline const char* Buffer::FindCRLF() const
     {
-        const char* crlf = std::search(BeginRead(), BeginWrite(), k_CRLF, k_CRLF + 2);
-        return crlf == BeginWrite() ? NULL : crlf;
+        const char* crlf = std::search(ReadIndex(), WriteIndex(), k_CRLF, k_CRLF + 2);
+        return crlf == WriteIndex() ? NULL : crlf;
     }
     inline const char* Buffer::FindCRLF(const char* start) const
     {
-        const char* crlf = std::search(start, BeginWrite(), k_CRLF, k_CRLF + 2);
-        return crlf == BeginWrite() ? NULL : crlf;
+        const char* crlf = std::search(start, WriteIndex(), k_CRLF, k_CRLF + 2);
+        return crlf == WriteIndex() ? NULL : crlf;
     }
     inline void Buffer::drop(uint64_t len)
     {
         if (len < ReadableBytes())
             m_readIndex += len;
         else
-            DropAll();
-    }
-    inline void Buffer::DropAll()
-    {
-        m_readIndex = k_PrependSize;
-        m_writeIndex = k_PrependSize;
+            m_readIndex = m_writeIndex = k_PrependSize;
     }
     inline std::string Buffer::RetrieveAsString(uint64_t len)
     {
-        std::string res(BeginRead(), len);
+        std::string res(ReadIndex(), len);
         drop(len);
         return res;
     }
     inline void Buffer::append(const char* data, uint64_t len)
     {
         EnsureWritableBytes(len);
-        std::copy(data, data + len, BeginWrite());
-        WriteIndexRightShift(len);
+        memcpy(WriteIndex(), data, len);
+        m_writeIndex += len;
     }
     inline void Buffer::EnsureWritableBytes(uint64_t len)
     {
-        if (WritableBytes() < len)
+        if (WriteableBytes() < len)
             MakeSpace(len);
     }
     inline void Buffer::AppendInt64(int64_t x)
@@ -3297,19 +3298,19 @@ namespace kurisu {
     inline int64_t Buffer::PeekInt64() const
     {
         int64_t val = 0;
-        memcpy(&val, BeginRead(), sizeof(val));
+        memcpy(&val, ReadIndex(), sizeof(val));
         return ntohll(val);
     }
     inline int Buffer::PeekInt32() const
     {
         int val = 0;
-        memcpy(&val, BeginRead(), sizeof(val));
+        memcpy(&val, ReadIndex(), sizeof(val));
         return ntohl(val);
     }
     inline int16_t Buffer::PeekInt16() const
     {
         int16_t val = 0;
-        memcpy(&val, BeginRead(), sizeof(val));
+        memcpy(&val, ReadIndex(), sizeof(val));
         return ntohs(val);
     }
     inline void Buffer::PrependInt64(int64_t x)
@@ -3329,8 +3330,10 @@ namespace kurisu {
     }
     inline void Buffer::prepend(const void* data, uint64_t len)
     {
+        if (m_readIndex < len)
+            LOG_FATAL << "in Buffer::prepend   lack of PrependableBytes";
         m_readIndex -= len;
-        std::copy((const char*)data, (const char*)data + len, begin() + m_readIndex);
+        memcmp(ReadIndex(), (const char*)data, len);
     }
     inline void Buffer::shrink(uint64_t reserve)
     {
@@ -3341,31 +3344,45 @@ namespace kurisu {
     }
     inline void Buffer::MakeSpace(uint64_t len)
     {
-        if (WritableBytes() + PrependableBytes() < len + k_PrependSize)
-            m_vec.resize(m_writeIndex + len);  //不够就开辟一片新的地方
+        if (WriteableBytes() + PrependableBytes() < len + k_PrependSize)
+            resize(m_writeIndex + len);  //不够就开辟一片新的地方
         else
         {  //够就把数据移到最前面,后面就是space
             uint64_t readable = ReadableBytes();
             char* p = begin();
-            std::copy(p + m_readIndex, p + m_writeIndex, p + k_PrependSize);
+            memcpy(p + k_PrependSize, p + m_readIndex, readable);
             m_readIndex = k_PrependSize;
             m_writeIndex = m_readIndex + readable;
         }
     }
-    inline ssize_t Buffer::Read(int fd, int* savedErrno)
+    inline ssize_t Buffer::ReadSocket(int fd, int* savedErrno)  //TODO   热点
     {
-        char tmpBuf[65536];
+        if (size() < 81920)
+            return Readv(fd, savedErrno);
+        else
+            return Read(fd, savedErrno);
+    }
+    ssize_t Buffer::Read(int fd, int* savedErrno)
+    {
+        ssize_t n = read(fd, WriteIndex(), WriteableBytes());
+        if (n < 0)
+            *savedErrno = errno;
+        else if ((uint64_t)n < WriteableBytes())
+            m_writeIndex += n;
+        return n;
+    }
+    ssize_t Buffer::Readv(int fd, int* savedErrno)
+    {
+        char tmpBuf[8192];
         //两个缓冲区，一个是Buffer剩余的空间，一个是tmpbuf
         iovec vec[2];
-        const uint64_t writable = WritableBytes();
-        vec[0].iov_base = begin() + m_writeIndex;
+        const uint64_t writable = WriteableBytes();
+        vec[0].iov_base = WriteIndex();
         vec[0].iov_len = writable;
         vec[1].iov_base = tmpBuf;
         vec[1].iov_len = sizeof(tmpBuf);
 
-        //如果Buffer剩余空间够，就只用Buffer剩余空间，否则还加一个tmpbuf
-        const int iovecNum = (writable < sizeof(tmpBuf)) ? 2 : 1;
-        const ssize_t n = detail::Readv(fd, vec, iovecNum);
+        const ssize_t n = readv(fd, vec, 2);
         //错误
         if (n < 0)
             *savedErrno = errno;
@@ -3375,12 +3392,12 @@ namespace kurisu {
         //Buffer空间不够
         else
         {
-            m_writeIndex = m_vec.size();
+            m_writeIndex = capacity();
             append(tmpBuf, n - writable);
         }
+
         return n;
     }
-
 
 
     inline TcpConnection::TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const SockAddr& localAddr, const SockAddr& peerAddr)
@@ -3441,7 +3458,7 @@ namespace kurisu {
         {
             if (m_loop->InLoopThread())
             {
-                SendInLoop(buf->BeginRead(), buf->ReadableBytes());  //如果是当前线程就直接发送
+                SendInLoop(buf->ReadIndex(), buf->ReadableBytes());  //如果是当前线程就直接发送
                 buf->DropAll();
             }
             else
@@ -3497,7 +3514,8 @@ namespace kurisu {
         m_loop->AssertInLoopThread();
         int savedErrno = 0;
         //尝试一次读完tcp缓冲区的所有数据,返回实际读入的字节数(一次可能读不完)
-        ssize_t n = m_inputBuf.Read(m_channel->fd(), &savedErrno);
+        ssize_t n = m_inputBuf.ReadSocket(m_channel->fd(), &savedErrno);
+
         if (n > 0)  //读成功就调用用户设置的回调函数
             m_msgCallback(shared_from_this(), &m_inputBuf, receiveTime);
         else if (n == 0)  //说明对方调用了close()
@@ -3505,7 +3523,7 @@ namespace kurisu {
         else  //出错
         {
             errno = savedErrno;
-            LOG_SYSERR << "TcpConnection::handleRead";
+            LOG_SYSERR << "TcpConnection::HandleRead";
             HandleError();
         }
     }
@@ -3514,8 +3532,8 @@ namespace kurisu {
         m_loop->AssertInLoopThread();
         if (m_channel->IsWriting())
         {
-            //尝试一次写完outputBuf的所有数据,返回实际写入的字节数(tcp缓冲区很有可能仍然不能容纳所有数据)
-            ssize_t n = detail::Write(m_channel->fd(), m_outputBuf.BeginRead(), m_outputBuf.ReadableBytes());
+            //尝试一次写完outputBuf的所有数据,返回实际写入的字节数(tcp缓冲区有可能仍然不能容纳所有数据)
+            ssize_t n = write(m_channel->fd(), m_outputBuf.ReadIndex(), m_outputBuf.ReadableBytes());
             if (n > 0)
             {
                 m_outputBuf.drop(n);  //调整index
@@ -3532,7 +3550,7 @@ namespace kurisu {
                 }
             }
             else
-                LOG_SYSERR << "TcpConnection::handleWrite";
+                LOG_SYSERR << "TcpConnection::HandleWrite";
         }
         else
             LOG_TRACE << "Connection fd = " << m_channel->fd() << " is down, no more writing";
@@ -3554,12 +3572,12 @@ namespace kurisu {
     inline void TcpConnection::HandleError()
     {
         int err = detail::GetSocketError(m_channel->fd());
-        LOG_ERROR << "TcpConnection::handleError [" << m_name << "] - SO_ERROR = " << err << " " << detail::strerror_tl(err);
+        LOG_ERROR << "TcpConnection::HandleError [" << m_name << "] - SO_ERROR = " << err << " " << detail::strerror_tl(err);
     }
     inline void TcpConnection::SendInLoop(const void* data, size_t len)
     {
         m_loop->AssertInLoopThread();
-        ssize_t nwrote = 0;
+        ssize_t n = 0;
         size_t remain = len;
         bool faultError = false;
         if (m_status == k_Disconnected)
@@ -3567,22 +3585,30 @@ namespace kurisu {
             LOG_WARN << "disconnected, give up writing";
             return;
         }
-
-        //如果channel没在写数据且outputBuf为空,就直接往fd写
-        //因为如果outputBuf不为空就直接往fd写,就会导致顺序出错,应先把outputBuf里的数据发完
-        if (!m_channel->IsWriting() && m_outputBuf.ReadableBytes() == 0)
+        //如果没在epoll注册就直接发
+        if (!m_channel->IsWriting())
         {
-            nwrote = detail::Write(m_channel->fd(), data, len);
-            if (nwrote >= 0)
+            // aiocb wt;
+            // bzero(&wt, sizeof(wt));
+            // wt.aio_fildes = m_channel->fd();
+            // wt.aio_buf = (char*)data;
+            // wt.aio_nbytes = len;
+            // wt.aio_offset = 0;
+            // wt.aio_lio_opcode = LIO_WRITE;
+
+            // n = aio_write(&wt);
+
+            n = write(m_channel->fd(), data, len);
+            if (n >= 0)
             {
-                remain = len - nwrote;
-                if (remain == 0 && m_writeDoneCallback)  //写完且有回调要执行
+                remain = len - n;
+                if (m_writeDoneCallback && remain == 0)  //写完且有回调要执行
                     m_loop->AddExtraFunc(std::bind(m_writeDoneCallback, shared_from_this()));
             }
             else  //出错,一点也写不进
             {
-                nwrote = 0;
-                if (errno != EWOULDBLOCK)  //如果错误为EWOULDBLOCK,表明tcp缓冲区已满
+                n = 0;
+                if (errno != EAGAIN)  //如果错误为EAGAIN,表明tcp缓冲区已满
                 {
                     LOG_SYSERR << "TcpConnection::SendInLoop";
                     //EPIPE表示客户端已经关闭了连接
@@ -3593,14 +3619,14 @@ namespace kurisu {
             }
         }
 
-        if (!faultError && remain > 0)  //没出错但没写完
+        if (!faultError && remain > 0)  //没出错但没写完(极端情况,tcp缓冲区满了)
         {
             uint64_t bufRemain = m_outputBuf.ReadableBytes();
             //到达阈值且设置了对应的回调函数,则进行回调
             if (bufRemain + remain >= m_highWaterMark && bufRemain < m_highWaterMark && m_highWaterMarkCallback)
                 m_loop->AddExtraFunc(std::bind(m_highWaterMarkCallback, shared_from_this(), bufRemain + remain));
             //把剩下的数据写入outputBuf中
-            m_outputBuf.append((const char*)data + nwrote, remain);
+            m_outputBuf.append((const char*)data + n, remain);
             //如果channel之前没监听写事件,就开启监听
             if (!m_channel->IsWriting())
                 m_channel->OnWriting();
