@@ -3,7 +3,7 @@
 int main()
 {
     int fd = socket(AF_INET, SOCK_STREAM, 0);
-    kurisu::SockAddr addr(5005, "127.0.0.1");
+    kurisu::SockAddr addr(5005, "192.168.0.105");
     std::cout << "connect";
     std::cin.get();
     kurisu::detail::Connect(fd, &addr);

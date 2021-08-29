@@ -3,6 +3,7 @@
 #include <string.h>
 #include <string_view>
 #include <boost/operators.hpp>
+#include <boost/circular_buffer.hpp>
 #include <fmt/chrono.h>
 #include <fmt/compile.h>
 #include <execinfo.h>
@@ -35,6 +36,8 @@
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <map>
+#include <set>
+#include <any>
 
 inline uint64_t htonll(uint64_t val) { return htobe64(val); }
 inline uint64_t ntohll(uint64_t val) { return be64toh(val); }
@@ -64,24 +67,24 @@ namespace kurisu {
         explicit Timestamp(std::chrono::system_clock::time_point stamp) : m_stamp(stamp) {}
 
         auto GetStamp() const { return m_stamp; }
-        void swap(Timestamp& other) { std::swap(m_stamp, other.m_stamp); }
-        bool valid() { return m_stamp != s_invalid; }
+        void Swap(Timestamp& other) { std::swap(m_stamp, other.m_stamp); }
+        bool Valid() { return m_stamp != s_invalid; }
         char* GmLogFormat(char* buf) const;
         char* LocalLogFormat(char* buf) const;
         //format gmtime
         std::string GmFormatString() const { return fmt::format(FMT_COMPILE("{:%F %T}"), fmt::gmtime(m_stamp)); }
         //format localtime
         std::string LocalFormatString() const { return fmt::format(FMT_COMPILE("{:%F %T}"), fmt::localtime(m_stamp)); }
-        int64_t usSinceEpoch() const;
-        int64_t nsSinceEpoch() const;
-        int64_t secondsSinceEpoch() const;
-        time_t as_time_t() { return (time_t)secondsSinceEpoch(); }
+        int64_t UsSinceEpoch() const;
+        int64_t NsSinceEpoch() const;
+        int64_t SecondsSinceEpoch() const;
+        time_t As_time_t() { return (time_t)SecondsSinceEpoch(); }
 
         bool operator<(const Timestamp& other) const { return this->GetStamp() < other.GetStamp(); }
         bool operator==(const Timestamp& other) const { return this->GetStamp() == other.GetStamp(); }
 
-        static Timestamp now() { return Timestamp(); }
-        static Timestamp invalid() { return Timestamp(s_invalid); }
+        static Timestamp Now() { return Timestamp(); }
+        static Timestamp Invalid() { return Timestamp(s_invalid); }
         //seconds
         static double TimeDifference(Timestamp high, Timestamp low);
         static Timestamp AddTime(Timestamp stamp, double second);
@@ -94,7 +97,7 @@ namespace kurisu {
 
     namespace this_thrd {
         namespace detail {
-            inline pid_t gettid() { return (pid_t)syscall(SYS_gettid); }
+            inline pid_t GetTid() { return (pid_t)syscall(SYS_gettid); }
             inline std::string Demangle(const char* symbol)
             {
                 uint64_t size;
@@ -132,26 +135,26 @@ namespace kurisu {
         inline __thread int t_tidStringLength;
         inline __thread const char* t_threadName;
 
-        inline void cacheTid()
+        inline void CacheTid()
         {
             if (t_cachedTid == 0)
             {
-                t_cachedTid = detail::gettid();
+                t_cachedTid = detail::GetTid();
                 char* p = fmt::format_to(t_tidString, FMT_COMPILE("{:5d}"), t_cachedTid);
                 t_tidStringLength = (int)(p - t_tidString);
             }
         }
-        inline int tid()
+        inline int Tid()
         {
             if (t_cachedTid == 0)
-                cacheTid();
+                CacheTid();
             return t_cachedTid;
         }
         inline const char* TidString() { return t_tidString; }
         inline int TidStringLength() { return t_tidStringLength; }
-        inline const char* name() { return t_threadName; }
+        inline const char* Name() { return t_threadName; }
 
-        inline bool IsMainThread() { return tid() == getpid(); }
+        inline bool IsMainThread() { return Tid() == getpid(); }
         inline void SleepFor(int us) { std::this_thread::sleep_for(std::chrono::microseconds(us)); }
         inline std::string StackTrace()
         {
@@ -178,11 +181,11 @@ namespace kurisu {
         namespace detail {
             inline bool mainThreadInit = [] {
                 t_threadName = "main";
-                cacheTid();
+                CacheTid();
                 pthread_atfork(NULL, NULL, [] {
                     t_threadName = "main";
                     t_cachedTid = 0;
-                    cacheTid();
+                    CacheTid();
                 });
                 return 0;
             }();
@@ -216,22 +219,22 @@ namespace kurisu {
 
         class KnownLengthString : copyable {
         public:
-            KnownLengthString(const char* str, uint64_t len) : buf(str), size(len) {}
+            KnownLengthString(const char* str, uint64_t len) : m_buf(str), m_size(len) {}
             KnownLengthString& operator=(const KnownLengthString& other)
             {
-                buf = other.buf;
-                size = other.size;
+                m_buf = other.m_buf;
+                m_size = other.m_size;
                 return *this;
             }
-            const char* buf;
-            uint64_t size;
+            const char* m_buf;
+            uint64_t m_size;
         };
 
         class CountDownLatch : uncopyable {
         public:
             explicit CountDownLatch(int count) : m_count(count) {}
 
-            void wait();
+            void Wait();
             void CountDown();
             int GetCount() const;
 
@@ -241,7 +244,7 @@ namespace kurisu {
             int m_count;
         };
 
-        inline void CountDownLatch::wait()
+        inline void CountDownLatch::Wait()
         {
             std::unique_lock locker(m_mu);
             while (m_count > 0)
@@ -266,7 +269,7 @@ namespace kurisu {
             ThreadData(std::function<void()> func, const std::string& name, pid_t& tid, CountDownLatch& latch)
                 : m_func(std::move(func)), m_name(name), m_tid(tid), m_latch(latch) {}
 
-            void run();
+            void Run();
 
         public:
             std::function<void()> m_func;
@@ -275,9 +278,9 @@ namespace kurisu {
             CountDownLatch& m_latch;
         };
 
-        inline void ThreadData::run()
+        inline void ThreadData::Run()
         {
-            m_tid = this_thrd::tid();
+            m_tid = this_thrd::Tid();
             m_latch.CountDown();
             this_thrd::t_threadName = m_name.empty() ? "kurisuThread" : m_name.c_str();
             prctl(PR_SET_NAME, this_thrd::t_threadName);  //给线程命名
@@ -308,7 +311,7 @@ namespace kurisu {
                 throw;  // rethrow
             }
         }
-        inline void ThrdEntrance(std::shared_ptr<ThreadData> thrdData) { thrdData->run(); }
+        inline void ThrdEntrance(std::shared_ptr<ThreadData> thrdData) { thrdData->Run(); }
 
         constexpr uint64_t k_SmallBuf = 4'000;
         constexpr uint64_t k_LargeBuf = 4'000'000;
@@ -317,17 +320,17 @@ namespace kurisu {
         public:
             FixedBuffer() : m_index(m_data) { m_data[SIZE] = '\0'; }
 
-            uint64_t size() const { return (uint64_t)(m_index - m_data); }
-            const char* data() const { return m_data; }
+            uint64_t Size() const { return (uint64_t)(m_index - m_data); }
+            const char* Data() const { return m_data; }
             void IndexShiftRight(uint64_t num) { m_index += num; }
-            char* index() { return m_index; }
-            void reset() { m_index = m_data; }
-            void zero() { bzero(m_data, SIZE); }
-            std::string String() const { return std::string(m_data, size()); }
-            std::string_view StringView() const { return std::string_view(m_data, size()); }
-            uint64_t AvalibleSize() { return (uint64_t)(end() - m_index); }
+            char* Index() { return m_index; }
+            void Reset() { m_index = m_data; }
+            void Zero() { bzero(m_data, SIZE); }
+            std::string String() const { return std::string(m_data, Size()); }
+            std::string_view StringView() const { return std::string_view(m_data, Size()); }
+            uint64_t AvalibleSize() { return (uint64_t)(End() - m_index); }
 
-            void append(const char* buf, uint64_t len)
+            void Append(const char* buf, uint64_t len)
             {
                 auto n = AvalibleSize();
                 if (n > len)
@@ -350,7 +353,7 @@ namespace kurisu {
 
 
         private:
-            const char* end() const { return m_data + SIZE; }
+            const char* End() const { return m_data + SIZE; }
 
 
         private:
@@ -361,7 +364,7 @@ namespace kurisu {
 
         //效率很高的itoa算法，比to_string快5倍以上
         template <typename T>
-        inline uint64_t convert(char buf[], T value)
+        inline uint64_t Convert(char buf[], T value)
         {
             static const char digits[] = "9876543210123456789";
             static const char* zero = digits + 9;
@@ -384,7 +387,7 @@ namespace kurisu {
             return p - buf;
         }
         //效率很高的pointer->str算法
-        inline uint64_t convertHex(char buf[], uintptr_t value)
+        inline uint64_t ConvertHex(char buf[], uintptr_t value)
         {
             static const char digitsHex[] = "0123456789ABCDEF";
             uintptr_t i = value;
@@ -412,7 +415,7 @@ namespace kurisu {
             int ReadToString(int maxSize, std::string& content, int64_t* fileSize, int64_t* modifyTime, int64_t* createTime);
             //把文件的数据读到m_buf里  返回errno
             int ReadToBuffer(int* size);
-            const char* buffer() const { return m_buf; }
+            const char* Buffer() const { return m_buf; }
 
             static const int k_BufferSize = 64 * 1024;  //byte
 
@@ -523,7 +526,7 @@ namespace kurisu {
             return scandir(dirpath, &namelist, filter, alphasort);
         }
 
-        inline Timestamp g_startTime = Timestamp::now();
+        inline Timestamp g_startTime = Timestamp::Now();
         // assume those won't change during the life time of a process.
         inline int g_clockTicks = (int)sysconf(_SC_CLK_TCK);
         inline int g_pageSize = (int)sysconf(_SC_PAGE_SIZE);
@@ -539,10 +542,10 @@ namespace kurisu {
             explicit LogFileAppender(StringArg filename)
                 : m_fp(fopen(filename.c_str(), "ae")) { setbuffer(m_fp, m_buf, sizeof(m_buf)); }
             ~LogFileAppender() { fclose(m_fp); }
-            void append(const char* logline, const uint64_t len);
-            void flush() { fflush(m_fp); }
+            void Append(const char* logline, const uint64_t len);
+            void Flush() { fflush(m_fp); }
             uint64_t WrittenBytes() const { return m_writtenBytes; }
-            uint64_t write(const char* logline, const uint64_t len) { return fwrite_unlocked(logline, 1, len, m_fp); }
+            uint64_t Write(const char* logline, const uint64_t len) { return fwrite_unlocked(logline, 1, len, m_fp); }
 
 
         private:
@@ -550,13 +553,13 @@ namespace kurisu {
             char m_buf[64 * 1024];  //正常情况下日志先写进这里,满了或者flush才往内核缓冲区写,减少系统调用
             uint64_t m_writtenBytes = 0;
         };
-        inline void LogFileAppender::append(const char* logline, const uint64_t len)
+        inline void LogFileAppender::Append(const char* logline, const uint64_t len)
         {
             uint64_t written = 0;
             while (written != len)
             {
                 uint64_t remain = len - written;
-                uint64_t n = write(logline + written, remain);
+                uint64_t n = Write(logline + written, remain);
                 if (n != remain)
                 {
                     int err = ferror(m_fp);
@@ -578,14 +581,14 @@ namespace kurisu {
                 : m_func(std::move(func)), m_name(name) { SetDefaultName(); }
             ~Thread();
 
-            void start();
-            void join() { m_thrd.join(); }
+            void Start();
+            void Join() { m_thrd.join(); }
 
-            bool started() const { return m_started; }
-            pid_t tid() const { return m_tid; }
-            const std::string& name() const { return m_name; }
+            bool Started() const { return m_started; }
+            pid_t Tid() const { return m_tid; }
+            const std::string& Name() const { return m_name; }
 
-            static int numCreated() { return s_createdNum; }
+            static int NumCreated() { return s_createdNum; }
 
         private:
             void SetDefaultName();
@@ -612,14 +615,14 @@ namespace kurisu {
             if (m_name.empty())
                 m_name = fmt::format("Thread{}", s_createdNum);
         }
-        inline void Thread::start()
+        inline void Thread::Start()
         {
             using namespace detail;
             m_started = true;
             auto thrdData = std::make_shared<ThreadData>(std::move(m_func), m_name, m_tid, m_latch);
             m_thrd = std::thread(ThrdEntrance, thrdData);
             m_pthreadID = m_thrd.native_handle();
-            m_latch.wait();
+            m_latch.Wait();
         }
 
 
@@ -635,21 +638,21 @@ namespace kurisu {
             //设置创建线程池时会调用的初始化函数
             void SetThreadInitCallback(const std::function<void()>& callback) { m_thrdInitCallBack = callback; }
 
-            void stop();
+            void Stop();
             //在线程池内执行该函数
-            void run(std::function<void()> func);
-            void join();
+            void Run(std::function<void()> func);
+            void Join();
 
-            const std::string& name() const { return m_name; }
-            uint64_t size() const;
+            const std::string& Name() const { return m_name; }
+            uint64_t Size() const;
 
         private:
             //线程不安全，这个函数必须在m_mu已被锁上时才能调用
             //当 m_maxSize == 0时恒为不满
-            bool full() const;
+            bool Full() const;
             //线程池在这个函数中循环
-            void Loop();
-            std::function<void()> take();
+            void Handle();
+            std::function<void()> Take();
 
         private:
             std::atomic_bool m_running = 0;  //退出的标志
@@ -666,7 +669,7 @@ namespace kurisu {
         inline ThreadPool::~ThreadPool()
         {
             if (m_running)
-                stop();
+                Stop();
         }
         inline void ThreadPool::SetThrdNum(int thrdNum)
         {
@@ -676,21 +679,21 @@ namespace kurisu {
             {
                 std::string id = fmt::format("{}", i + 1);
                 auto res = m_name + id;
-                m_thrds.emplace_back(std::make_unique<Thread>(std::bind(&kurisu::detail::ThreadPool::Loop, this), m_name + id));  //创建线程
-                m_thrds[i]->start();
+                m_thrds.emplace_back(std::make_unique<Thread>(std::bind(&kurisu::detail::ThreadPool::Handle, this), m_name + id));  //创建线程
+                m_thrds[i]->Start();
             }
 
             if (thrdNum == 0 && m_thrdInitCallBack)  //如果创建的线程为0，也执行初始化后的回调函数
                 m_thrdInitCallBack();
         }
-        inline void ThreadPool::Loop()
+        inline void ThreadPool::Handle()
         {
             try
             {
                 if (m_thrdInitCallBack)
                     m_thrdInitCallBack();  //如果有初始化的回调函数就执行
                 while (m_running)
-                    if (std::function<void()> func(take()); func)  //从函数队列中拿出函数，是可执行的函数就执行，直到m_running被变成false
+                    if (std::function<void()> func(Take()); func)  //从函数队列中拿出函数，是可执行的函数就执行，直到m_running被变成false
                         func();
             }
             catch (const Exception& ex)
@@ -712,7 +715,7 @@ namespace kurisu {
                 throw;  // rethrow
             }
         }
-        inline std::function<void()> ThreadPool::take()
+        inline std::function<void()> ThreadPool::Take()
         {
             std::unique_lock locker(m_mu);
             if (m_task.empty() && m_running)
@@ -729,7 +732,7 @@ namespace kurisu {
 
             return func;
         }
-        inline void ThreadPool::run(std::function<void()> task)
+        inline void ThreadPool::Run(std::function<void()> task)
         {
             if (m_thrds.empty())
                 task();  //如果没有线程池，就直接用现在的线程执行函数
@@ -742,8 +745,8 @@ namespace kurisu {
                 //这样做效率可能会有所提高，但是会更占用更多内存
                 //而且使用不当还会造成等待队列爆满的情况，建议还是设置一个大小
                 //除非你很清楚你在干什么
-                if (full() && m_running)
-                    m_notFullCond.wait(locker, [this] { return !full() || !m_running; });  //线程池中的线程都忙，就等到有空闲的线程为止
+                if (Full() && m_running)
+                    m_notFullCond.wait(locker, [this] { return !Full() || !m_running; });  //线程池中的线程都忙，就等到有空闲的线程为止
 
                 if (!m_running)  //如果已经析构，线程退出
                     return;
@@ -753,7 +756,7 @@ namespace kurisu {
                 m_notEmptyCond.notify_one();  //通知其他线程等待队列已有任务
             }
         }
-        inline void ThreadPool::stop()
+        inline void ThreadPool::Stop()
         {
             {
                 std::lock_guard locker(m_mu);
@@ -762,36 +765,36 @@ namespace kurisu {
                 m_notEmptyCond.notify_all();
             }
             for (auto&& thrd : m_thrds)
-                thrd->join();
+                thrd->Join();
         }
-        inline void ThreadPool::join()
+        inline void ThreadPool::Join()
         {
             detail::CountDownLatch latch(1);
 
             //往线程池里加入一个倒计时任务
-            run(std::bind(&kurisu::detail::CountDownLatch::CountDown, &latch));
+            Run(std::bind(&kurisu::detail::CountDownLatch::CountDown, &latch));
 
             //等待倒计时任务被执行
             //被执行了就说明在这个任务之前的任务都被执行了
-            latch.wait();
-            stop();
+            latch.Wait();
+            Stop();
         }
-        inline uint64_t ThreadPool::size() const
+        inline uint64_t ThreadPool::Size() const
         {
             std::lock_guard locker(m_mu);
             return m_task.size();
         }
-        inline bool ThreadPool::full() const { return m_maxSize > 0 && m_task.size() >= m_maxSize; }
+        inline bool ThreadPool::Full() const { return m_maxSize > 0 && m_task.size() >= m_maxSize; }
 
 
 
         class LogStream : uncopyable {
         public:
-            using Buf = detail::FixedBuffer<detail::k_SmallBuf>;
+            using FixedBuf = detail::FixedBuffer<detail::k_SmallBuf>;
 
-            void append(const char* data, int len) { m_buf.append(data, len); }
-            const Buf& buffer() const { return m_buf; }
-            void ResetBuffer() { m_buf.reset(); }
+            void Append(const char* data, int len) { m_buf.Append(data, len); }
+            const FixedBuf& Buffer() const { return m_buf; }
+            void ResetBuffer() { m_buf.Reset(); }
 
             LogStream& operator<<(bool val);
             LogStream& operator<<(char val);
@@ -808,7 +811,7 @@ namespace kurisu {
             LogStream& operator<<(const unsigned char* p);
             LogStream& operator<<(const std::string& str);
             LogStream& operator<<(const std::string_view& str);
-            LogStream& operator<<(const Buf& buf);
+            LogStream& operator<<(const FixedBuf& buf);
             LogStream& operator<<(const detail::KnownLengthString& str);
 
         private:
@@ -816,18 +819,18 @@ namespace kurisu {
             void FormatInt(T val);
 
         private:
-            Buf m_buf;
+            FixedBuf m_buf;
             static const int k_MaxSize = 32;  //除const char* std::strubg std::string_view之外，一次能写入的最大字节数
         };
 
         inline LogStream& LogStream::operator<<(bool val)
         {
-            m_buf.append(val ? "1" : "0", 1);
+            m_buf.Append(val ? "1" : "0", 1);
             return *this;
         }
         inline LogStream& LogStream::operator<<(char val)
         {
-            m_buf.append(&val, 1);
+            m_buf.Append(&val, 1);
             return *this;
         }
         inline LogStream& LogStream::operator<<(int16_t val)
@@ -869,8 +872,8 @@ namespace kurisu {
         {
             if (m_buf.AvalibleSize() >= k_MaxSize)
             {
-                auto ptr = fmt::format_to(m_buf.index(), FMT_COMPILE("{:.12g}"), val);
-                uint64_t len = ptr - m_buf.index();
+                auto ptr = fmt::format_to(m_buf.Index(), FMT_COMPILE("{:.12g}"), val);
+                uint64_t len = ptr - m_buf.Index();
                 m_buf.IndexShiftRight(len);
             }
             return *this;
@@ -880,10 +883,10 @@ namespace kurisu {
             uintptr_t val = (uintptr_t)p;
             if (m_buf.AvalibleSize() >= k_MaxSize)
             {
-                char* buf = m_buf.index();
+                char* buf = m_buf.Index();
                 buf[0] = '0';
                 buf[1] = 'x';
-                uint64_t len = detail::convertHex(buf + 2, val);
+                uint64_t len = detail::ConvertHex(buf + 2, val);
                 m_buf.IndexShiftRight(len + 2);
             }
             return *this;
@@ -891,9 +894,9 @@ namespace kurisu {
         inline LogStream& LogStream::operator<<(const char* p)
         {
             if (p)
-                m_buf.append(p, strlen(p));
+                m_buf.Append(p, strlen(p));
             else
-                m_buf.append("(null)", 6);
+                m_buf.Append("(null)", 6);
             return *this;
         }
         inline LogStream& LogStream::operator<<(const unsigned char* p)
@@ -903,22 +906,22 @@ namespace kurisu {
         }
         inline LogStream& LogStream::operator<<(const std::string& str)
         {
-            m_buf.append(str.data(), str.size());
+            m_buf.Append(str.data(), str.size());
             return *this;
         }
         inline LogStream& LogStream::operator<<(const std::string_view& str)
         {
-            m_buf.append(str.data(), str.size());
+            m_buf.Append(str.data(), str.size());
             return *this;
         }
-        inline LogStream& LogStream::operator<<(const Buf& buf)
+        inline LogStream& LogStream::operator<<(const FixedBuf& buf)
         {
             *this << buf.StringView();
             return *this;
         }
         inline LogStream& LogStream::operator<<(const detail::KnownLengthString& str)
         {
-            m_buf.append(str.buf, str.size);
+            m_buf.Append(str.m_buf, str.m_size);
             return *this;
         }
         template <class T>
@@ -926,7 +929,7 @@ namespace kurisu {
         {
             if (m_buf.AvalibleSize() >= k_MaxSize)
             {
-                uint64_t len = detail::convert(m_buf.index(), val);
+                uint64_t len = detail::Convert(m_buf.Index(), val);
                 m_buf.IndexShiftRight(len);
             }
         }
@@ -951,8 +954,8 @@ namespace kurisu {
         Logger(const std::string_view& file, int line, bool toAbort);
         ~Logger();
 
-        detail::LogStream& stream() { return m_fmt.m_strm; }
-        static LogLevel level();
+        detail::LogStream& Stream() { return m_fmt.m_strm; }
+        static LogLevel Level();
 
         class SetLogLevel;
 
@@ -966,7 +969,7 @@ namespace kurisu {
             using LogLevel = Logger::LogLevel;
             Formatter(LogLevel level, int old_errno, std::string_view file, int line);
             void FormatTime();
-            void finish();
+            void Finish();
 
             Timestamp m_time;  //要格式化的时间戳
             detail::LogStream m_strm;
@@ -1010,9 +1013,9 @@ namespace kurisu {
     }  // namespace detail
 
     namespace process {
-        inline pid_t pid() { return getpid(); }
-        inline std::string PidString() { return fmt::format("{}", pid()); }
-        inline uid_t uid() { return getuid(); }
+        inline pid_t Pid() { return getpid(); }
+        inline std::string PidString() { return fmt::format("{}", Pid()); }
+        inline uid_t Uid() { return getuid(); }
         inline std::string UserName()
         {
             struct passwd pwd;
@@ -1020,7 +1023,7 @@ namespace kurisu {
             char buf[8192];
             const char* name = "unknownuser";
 
-            getpwuid_r(uid(), &pwd, buf, sizeof buf, &result);
+            getpwuid_r(Uid(), &pwd, buf, sizeof buf, &result);
             if (result)
                 name = pwd.pw_name;
             return name;
@@ -1048,7 +1051,7 @@ namespace kurisu {
         inline std::string ThreadStat()
         {
             char buf[64] = {0};
-            fmt::format_to(buf, "/proc/self/task/{}/stat", this_thrd::tid());
+            fmt::format_to(buf, "/proc/self/task/{}/stat", this_thrd::Tid());
             std::string result;
             detail::ReadFile(buf, 65536, result);
             return result;
@@ -1112,7 +1115,7 @@ namespace kurisu {
             return result;
         }
 
-        inline std::vector<pid_t> threads()
+        inline std::vector<pid_t> Threads()
         {
             std::vector<pid_t> result;
             detail::t_pids = &result;
@@ -1127,14 +1130,14 @@ namespace kurisu {
     class SyncLogFile : detail::uncopyable {
     public:
         SyncLogFile(const std::string& filename, uint64_t rollSize, bool isLocalTimeZone, bool threadSafe = true, int flushInterval = 3, int checkEveryN = 1024)
-            : m_filename(filename), k_RollSize(rollSize), k_FlushInterval(flushInterval), k_CheckEveryN(checkEveryN), m_isLocalTimeZone(isLocalTimeZone), m_mu(threadSafe ? std::make_unique<std::mutex>() : NULL) { roll(); }
+            : m_filename(filename), k_RollSize(rollSize), k_FlushInterval(flushInterval), k_CheckEveryN(checkEveryN), m_isLocalTimeZone(isLocalTimeZone), m_mu(threadSafe ? std::make_unique<std::mutex>() : NULL) { Roll(); }
         ~SyncLogFile() = default;
-        void append(const char* logline, const uint64_t len);
-        void flush();
-        bool roll();
+        void Append(const char* logline, const uint64_t len);
+        void Flush();
+        bool Roll();
 
     private:
-        void append_unlocked(const char* logline, const uint64_t len);
+        void AppendUnlocked(const char* logline, const uint64_t len);
         std::string MakeLogFileName(const std::string& basename, const Timestamp& now);
 
         const std::string m_filename;
@@ -1157,15 +1160,15 @@ namespace kurisu {
         AsyncLogFile(const std::string& basename, int64_t rollSize, bool isLocalTimeZone = false, int flushInterval = 3);
         ~AsyncLogFile();
 
-        void append(const char* logline, uint64_t len);
-        void stop();
+        void Append(const char* logline, uint64_t len);
+        void Stop();
 
     private:
-        using Buf = detail::FixedBuffer<detail::k_LargeBuf>;
-        using BufVector = std::vector<std::unique_ptr<Buf>>;
+        using FixedBuf = detail::FixedBuffer<detail::k_LargeBuf>;
+        using BufVector = std::vector<std::unique_ptr<FixedBuf>>;
         using BufPtr = BufVector::value_type;
         //m_thrd在此函数内循环
-        void Loop();
+        void Handle();
 
     private:
         const int k_flushInterval;           //多少秒就flush一次
@@ -1185,19 +1188,19 @@ namespace kurisu {
 
 
 #define LOG_TRACE \
-    if (kurisu::Logger::level() <= kurisu::Logger::LogLevel::TRACE) \
-    kurisu::Logger(__FILE__, __LINE__, kurisu::Logger::LogLevel::TRACE, __func__).stream()
+    if (kurisu::Logger::Level() <= kurisu::Logger::LogLevel::TRACE) \
+    kurisu::Logger(__FILE__, __LINE__, kurisu::Logger::LogLevel::TRACE, __func__).Stream()
 #define LOG_DEBUG \
-    if (kurisu::Logger::level() <= kurisu::Logger::LogLevel::DEBUG) \
-    kurisu::Logger(__FILE__, __LINE__, kurisu::Logger::LogLevel::DEBUG, __func__).stream()
+    if (kurisu::Logger::Level() <= kurisu::Logger::LogLevel::DEBUG) \
+    kurisu::Logger(__FILE__, __LINE__, kurisu::Logger::LogLevel::DEBUG, __func__).Stream()
 #define LOG_INFO \
-    if (kurisu::Logger::level() <= kurisu::Logger::LogLevel::INFO) \
-    kurisu::Logger(__FILE__, __LINE__).stream()
-#define LOG_WARN kurisu::Logger(__FILE__, __LINE__, kurisu::Logger::LogLevel::WARN).stream()
-#define LOG_ERROR kurisu::Logger(__FILE__, __LINE__, kurisu::Logger::LogLevel::ERROR).stream()
-#define LOG_FATAL kurisu::Logger(__FILE__, __LINE__, kurisu::Logger::LogLevel::FATAL).stream()
-#define LOG_SYSERR kurisu::Logger(__FILE__, __LINE__, false).stream()
-#define LOG_SYSFATAL kurisu::Logger(__FILE__, __LINE__, true).stream()
+    if (kurisu::Logger::Level() <= kurisu::Logger::LogLevel::INFO) \
+    kurisu::Logger(__FILE__, __LINE__).Stream()
+#define LOG_WARN kurisu::Logger(__FILE__, __LINE__, kurisu::Logger::LogLevel::WARN).Stream()
+#define LOG_ERROR kurisu::Logger(__FILE__, __LINE__, kurisu::Logger::LogLevel::ERROR).Stream()
+#define LOG_FATAL kurisu::Logger(__FILE__, __LINE__, kurisu::Logger::LogLevel::FATAL).Stream()
+#define LOG_SYSERR kurisu::Logger(__FILE__, __LINE__, false).Stream()
+#define LOG_SYSFATAL kurisu::Logger(__FILE__, __LINE__, true).Stream()
 
 
 
@@ -1212,11 +1215,11 @@ namespace kurisu {
         explicit SockAddr(const sockaddr_in& addr) : sin(addr) {}
         explicit SockAddr(const sockaddr_in6& addr) : sin6(addr) {}
 
-        sockaddr& as_sockaddr() { return sa; }
-        sockaddr_in& as_sockaddr_in() { return sin; }
-        sockaddr_in6& as_sockaddr_in6() { return sin6; }
+        sockaddr& As_sockaddr() { return sa; }
+        sockaddr_in& As_sockaddr_in() { return sin; }
+        sockaddr_in6& As_sockaddr_in6() { return sin6; }
 
-        sa_family_t famliy() const { return sa.sa_family; }
+        sa_family_t Famliy() const { return sa.sa_family; }
         std::string ipString() const;
         std::string ipPortString() const;
         uint16_t HostPort() const;
@@ -1235,7 +1238,7 @@ namespace kurisu {
     namespace detail {
         inline socklen_t SizeofSockAddr(SockAddr* addr)
         {
-            if (addr->famliy() == AF_INET)
+            if (addr->Famliy() == AF_INET)
                 return sizeof(struct sockaddr_in);
             else
                 return sizeof(struct sockaddr_in6);
@@ -1248,10 +1251,10 @@ namespace kurisu {
                 LOG_SYSFATAL << "Socket::MakeNonblockingSocket";
             return sockfd;
         }
-        inline int Connect(int sockfd, SockAddr* addr) { return connect(sockfd, &addr->as_sockaddr(), SizeofSockAddr(addr)); }
+        inline int Connect(int sockfd, SockAddr* addr) { return connect(sockfd, &addr->As_sockaddr(), SizeofSockAddr(addr)); }
         inline void Bind(int sockfd, SockAddr* addr)
         {
-            if (int res = bind(sockfd, &addr->as_sockaddr(), SizeofSockAddr(addr)); res < 0)
+            if (int res = bind(sockfd, &addr->As_sockaddr(), SizeofSockAddr(addr)); res < 0)
                 LOG_SYSFATAL << "Socket::BindAndListen  bind";
         }
         inline void Listen(int sockfd)
@@ -1265,7 +1268,7 @@ namespace kurisu {
 
             //将fd直接设为非阻塞
             //FIXME  IPv6可以吗
-            int connfd = accept4(sockfd, &addr->as_sockaddr(), &addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC);
+            int connfd = accept4(sockfd, &addr->As_sockaddr(), &addrlen, SOCK_NONBLOCK | SOCK_CLOEXEC);
             if (connfd < 0)
             {
                 int savedErrno = errno;
@@ -1316,8 +1319,8 @@ namespace kurisu {
         inline void IpProtToAddr(uint16_t port, const char* host, SockAddr* addr)
         {
             // addr->sin_port = htons(port);
-            sockaddr_in& sin = addr->as_sockaddr_in();
-            sockaddr_in6& sin6 = addr->as_sockaddr_in6();
+            sockaddr_in& sin = addr->As_sockaddr_in();
+            sockaddr_in6& sin6 = addr->As_sockaddr_in6();
 
             if (inet_pton(AF_INET, host, &sin.sin_addr) == 1)  //IPv4
                 sin.sin_family = AF_INET;
@@ -1332,10 +1335,10 @@ namespace kurisu {
                     LOG_SYSERR << "Socket::IpProtToAddr host resolve";
                     return;
                 }
-                memcpy(&addr->as_sockaddr(), ais->ai_addr, ais->ai_addrlen);
+                memcpy(&addr->As_sockaddr(), ais->ai_addr, ais->ai_addrlen);
                 freeaddrinfo(ais);
             }
-            if (addr->famliy() == AF_INET)
+            if (addr->Famliy() == AF_INET)
                 sin.sin_port = htons(port);
             else
                 sin6.sin6_port = htons(port);
@@ -1343,15 +1346,15 @@ namespace kurisu {
 
         inline void AddrToIp(char* buf, uint64_t size, SockAddr* addr)
         {
-            if (addr->famliy() == AF_INET)
-                inet_ntop(AF_INET, &addr->as_sockaddr_in().sin_addr, buf, (socklen_t)size);
-            else if (addr->famliy() == AF_INET6)
-                inet_ntop(AF_INET6, &addr->as_sockaddr_in6().sin6_addr, buf, (socklen_t)size);
+            if (addr->Famliy() == AF_INET)
+                inet_ntop(AF_INET, &addr->As_sockaddr_in().sin_addr, buf, (socklen_t)size);
+            else if (addr->Famliy() == AF_INET6)
+                inet_ntop(AF_INET6, &addr->As_sockaddr_in6().sin6_addr, buf, (socklen_t)size);
         }
 
         inline void AddrToIpPort(char* buf, uint64_t size, SockAddr* addr)
         {
-            if (addr->famliy() == AF_INET)
+            if (addr->Famliy() == AF_INET)
             {
                 AddrToIp(buf, size, addr);
                 uint64_t end = strlen(buf);
@@ -1386,7 +1389,7 @@ namespace kurisu {
             SockAddr localaddr;
             bzero(&localaddr, sizeof(SockAddr));
             socklen_t addrlen = sizeof(SockAddr);
-            if (getsockname(sockfd, &localaddr.as_sockaddr(), &addrlen) < 0)
+            if (getsockname(sockfd, &localaddr.As_sockaddr(), &addrlen) < 0)
                 LOG_SYSERR << "Sockets::GetLocalAddr";
             return localaddr;
         }
@@ -1395,32 +1398,9 @@ namespace kurisu {
             SockAddr peeraddr;
             bzero(&peeraddr, sizeof(SockAddr));
             socklen_t addrlen = sizeof(SockAddr);
-            if (getpeername(sockfd, &peeraddr.as_sockaddr(), &addrlen) < 0)
+            if (getpeername(sockfd, &peeraddr.As_sockaddr(), &addrlen) < 0)
                 LOG_SYSERR << "Sockets::GetPeerAddr";
             return peeraddr;
-        }
-
-
-        //FIXME   待测试
-        inline bool IsSelfConnect(int sockfd)
-        {
-            SockAddr localaddr = GetLocalAddr(sockfd);
-            SockAddr peeraddr = GetPeerAddr(sockfd);
-            if (localaddr.famliy() == AF_INET)
-            {
-                sockaddr_in& local = localaddr.as_sockaddr_in();
-                sockaddr_in& peer = peeraddr.as_sockaddr_in();
-                return local.sin_port == peer.sin_port && local.sin_addr.s_addr == peer.sin_addr.s_addr;
-            }
-            else if (localaddr.famliy() == AF_INET6)
-            {
-                sockaddr_in6& local = localaddr.as_sockaddr_in6();
-                sockaddr_in6& peer = peeraddr.as_sockaddr_in6();
-                return local.sin6_port == peer.sin6_port &&
-                       memcmp(&local.sin6_addr, &peer.sin6_addr, sizeof(local.sin6_addr)) == 0;
-            }
-            else
-                return false;
         }
 
         inline int MakeNonblockingTimerfd()
@@ -1434,7 +1414,7 @@ namespace kurisu {
         inline timespec HowMuchTimeFromNow(Timestamp when)
         {
             Timestamp now;
-            int64_t ns = when.nsSinceEpoch() - now.nsSinceEpoch();
+            int64_t ns = when.NsSinceEpoch() - now.NsSinceEpoch();
             timespec ts;
             ts.tv_sec = (time_t)(ns / 1'000'000'000);
             ts.tv_nsec = ns % 1'000'000'000;
@@ -1558,14 +1538,14 @@ namespace kurisu {
             Timer(std::function<void()> cb, Timestamp when, double interval)
                 : m_runtime(when), m_interval(interval), m_repeat(interval > 0.0), m_callback(std::move(cb)) {}
 
-            void run() const { m_callback(); }
-            void restart()
+            void Run() const { m_callback(); }
+            void Restart()
             {
                 //如果是重复的定时器
                 if (m_repeat)
                     m_runtime = Timestamp::AddTime(m_runtime, m_interval);  //重新计算下一个超时时刻
                 else
-                    m_runtime = Timestamp::invalid();
+                    m_runtime = Timestamp::Invalid();
             }
 
             Timestamp GetRuntime() const { return m_runtime; }
@@ -1584,6 +1564,7 @@ namespace kurisu {
         class Channel;
         class Poller;
         class TimerQueue;
+        class TcpConnectionTimingWheel;
 
     }  // namespace detail
 
@@ -1597,31 +1578,33 @@ namespace kurisu {
         friend class detail::TimerQueue;
     };
 
+    class TcpConnection;
+
     class EventLoop : detail::uncopyable {
     public:
         EventLoop();
         ~EventLoop();
-        void loop();
+        void Loop();
         //可以跨线程调用，如果在其他线程调用，会调用wakeup保证退出
-        void quit();
+        void Quit();
         Timestamp GetReturnTime() const { return m_returnTime; }
         int64_t GetLoopNum() const { return m_loopNum; }
         //在EventLoop所属的线程中执行此函数
-        void run(std::function<void()> callback);
+        void Run(std::function<void()> callback);
         //注册只执行一次的额外任务
         void AddExtraFunc(std::function<void()> callback);
         //某时刻触发Timer
-        TimerID runAt(Timestamp time, std::function<void()> callback);
+        TimerID RunAt(Timestamp time, std::function<void()> callback);
         //多久后触发Timer,单位second
-        TimerID runAfter(double delay, std::function<void()> callback);
+        TimerID RunAfter(double delay, std::function<void()> callback);
         //每隔多久触发Timer,单位second
-        TimerID runEvery(double interval, std::function<void()> callback);
+        TimerID RunEvery(double interval, std::function<void()> callback);
         //取消定时器
-        void cancel(TimerID timerID);
+        void Cancel(TimerID timerID);
 
         uint64_t GetExtraFuncsNum() const;
         //唤醒阻塞在poll的loop
-        void wakeup();
+        void Wakeup();
         //注册channel到poller的map中
         void UpdateChannel(detail::Channel* channel);
         //从poller的map中移除channel
@@ -1632,9 +1615,15 @@ namespace kurisu {
         //断言此线程是相应的IO线程
         void AssertInLoopThread();
         //此线程是否是相应的IO线程
-        bool InLoopThread() const { return m_threadID == this_thrd::tid(); }
+        bool InLoopThread() const { return m_threadID == this_thrd::Tid(); }
         //是否正在调用回调函数
         bool IsRunningCallback() const { return m_runningCallback; }
+        //将此TcpConnection加入到TimingWheel中
+        void AddToTimingWheel(const std::shared_ptr<TcpConnection>& conn);
+        //更新此TcpConnection,以防TimingWheel时间到调用ShutDown
+        void UpdateTimingWheel(const std::shared_ptr<TcpConnection>& conn);
+
+        void SetTimingWheel(int interval) { m_timingWheelInterval = interval; }
         //获取此线程的EventLoop
         static EventLoop* GetLoopOfThisThread();
 
@@ -1645,21 +1634,21 @@ namespace kurisu {
         //DEBUG用的,打印每个事件
         void PrintActiveChannels() const;
 
-        using ChannelList = std::vector<detail::Channel*>;
-
-        bool m_looping = false;           //线程是否调用了loop()
+        bool m_looping = false;           //线程是否调用了Loop()
         bool m_runningCallback = false;   //线程是否正在执行回调函数
         bool m_runningExtraFunc = false;  //  EventLoop线程是否正在执行的额外任务
-        std::atomic_bool m_quit = false;  //线程是否调用了quit()
-        int m_wakeUpfd;                   //一个eventfd   用于唤醒阻塞在poll的loop
+        std::atomic_bool m_quit = false;  //线程是否调用了Quit()
+        int m_wakeUpfd;                   //一个eventfd   用于唤醒阻塞在Poll的Loop
+        int m_timingWheelInterval = 0;
         const pid_t m_threadID;
         detail::Channel* m_thisActiveChannel = nullptr;  //当前正在执行哪个channel的回调函数
-        int64_t m_loopNum = 0;                           //loop总循环次数
+        int64_t m_loopNum = 0;                           //Loop总循环次数
         Timestamp m_returnTime;                          //有事件到来时返回的时间戳
         std::unique_ptr<detail::Poller> m_poller;
-        std::unique_ptr<detail::TimerQueue> timerQueue_;   //Timer队列
-        std::unique_ptr<detail::Channel> m_wakeUpChannel;  //用于唤醒后的回调函数
-        ChannelList m_activeChannels;                      // 保存所有有事件到来的channel
+        std::unique_ptr<detail::TimerQueue> timerQueue_;                  //Timer队列
+        std::unique_ptr<detail::Channel> m_wakeUpChannel;                 //用于唤醒后的回调函数
+        std::unique_ptr<detail::TcpConnectionTimingWheel> m_timingWheel;  //时间轮盘
+        std::vector<detail::Channel*> m_activeChannels;                   // 保存所有有事件到来的channel
 
         //EventLoop线程每次轮询除了执行有事件到来的channel的回调函数外，也会执行这个vector内的函数（额外的任务）
         std::vector<std::function<void()>> m_waitingExtraFuncs;
@@ -1698,18 +1687,23 @@ namespace kurisu {
 
         class EventLoopThread : uncopyable {
         public:
-            EventLoopThread(const std::function<void(EventLoop*)>& threadInitCallback = std::function<void(EventLoop*)>(),
+            EventLoopThread(int timingWheelInterval = 0,
+                            const std::function<void(EventLoop*)>& threadInitCallback = std::function<void(EventLoop*)>(),
                             const std::string& name = std::string())
-                : m_thrd(std::bind(&EventLoopThread::Loop, this), name), m_threadInitCallback(threadInitCallback) {}
+                : m_timingWheelInterval(timingWheelInterval),
+                  m_thrd(std::bind(&EventLoopThread::Handle, this), name),
+                  m_threadInitCallback(threadInitCallback) {}
+
             ~EventLoopThread();
 
-            EventLoop* start();
+            EventLoop* Start();
 
         private:
-            void Loop();
+            void Handle();
 
             EventLoop* m_loop = nullptr;
             bool m_exiting = false;
+            int m_timingWheelInterval;
             Thread m_thrd;
             std::mutex m_mu;
             std::condition_variable m_cond;
@@ -1720,12 +1714,12 @@ namespace kurisu {
         public:
             EventLoopThreadPool(EventLoop* loop, const std::string& name);
             void SetThreadNum(int threadNum) { m_thrdNum = threadNum; }
-            void start(const std::function<void(EventLoop*)>& threadInitCallback = std::function<void(EventLoop*)>());
+            void Start(int timingWheelInterval = 0, const std::function<void(EventLoop*)>& threadInitCallback = std::function<void(EventLoop*)>());
             EventLoop* GetNextLoop();
             EventLoop* GetLoopRandom();
             std::vector<EventLoop*> GetAllLoops();
-            bool started() const { return m_started; }
-            const std::string& name() const { return m_name; }
+            bool Started() const { return m_started; }
+            const std::string& Name() const { return m_name; }
 
         private:
             EventLoop* m_loop;
@@ -1752,7 +1746,7 @@ namespace kurisu {
             void SetErrorCallback(std::function<void()> callback) { m_errorCallback = std::move(callback); }
 
             //用于延长某些对象的生命期,使其寿命与obj相同
-            void tie(const std::shared_ptr<void>&);
+            void Tie(const std::shared_ptr<void>&);
             int fd() const { return m_fd; }
             //返回注册的事件
             int GetEvents() const { return m_events; }
@@ -1793,12 +1787,12 @@ namespace kurisu {
             //返回所属的EventLoop
             EventLoop* GetLoop() { return m_loop; }
             //暂时离开所属的EventLoop
-            void remove();
+            void Remove();
 
         private:
             static std::string EventsToString(int fd, int ev);
             //加入所属的EventLoop
-            void update();
+            void Update();
             //处理到来的事件
             void RunCallbackWithGuard(Timestamp timestamp);
 
@@ -1829,7 +1823,7 @@ namespace kurisu {
             Poller(EventLoop* loop) : m_epollfd(epoll_create1(EPOLL_CLOEXEC)), m_loop(loop), m_events(k_InitEventListSize) {}
             ~Poller() = default;
             //对epoll_wait的封装,返回时间戳
-            Timestamp poll(int timeoutMs, std::vector<Channel*>* activeChannels);
+            Timestamp Poll(int timeoutMs, std::vector<Channel*>* activeChannels);
             //添加channel
             void UpdateChannel(Channel* channel);
             //移除channel
@@ -1849,7 +1843,7 @@ namespace kurisu {
 
             static const char* OperationString(int operatoin);
             //注册事件,由operation决定
-            void update(int operation, Channel* channel);
+            void Update(int operation, Channel* channel);
 
             int m_epollfd;
             EventLoop* m_loop;                   //指向所属的EventLoop
@@ -1867,9 +1861,9 @@ namespace kurisu {
             explicit TimerQueue(EventLoop* loop);
             ~TimerQueue();
             //可以跨线程调用
-            TimerID add(std::function<void()> callback, Timestamp when, double interval);
+            TimerID Add(std::function<void()> callback, Timestamp when, double interval);
             //可以跨线程调用
-            void cancel(TimerID id) { m_loop->run(std::bind(&TimerQueue::CancelInLoop, this, id)); }
+            void Cancel(TimerID id) { m_loop->Run(std::bind(&TimerQueue::CancelInLoop, this, id)); }
 
         private:
             //以下成员函数只可能在TimerQueue所属的IO线程调用，因而不用加锁
@@ -1878,15 +1872,15 @@ namespace kurisu {
             void CancelInLoop(TimerID timerID);
 
             //当Timer触发超时时回调此函数
-            void HandleTimerfd();
+            void Handle();
             //返回超时的Timer
             TimeoutTimer GetTimeout(Timestamp now);
             //重置非一次性的Timer
-            void reset(TimeoutTimer& timeout);
+            void Reset(TimeoutTimer& timeout);
             //向TimerMap中插入timer
-            bool insert(detail::Timer* timer);
+            bool Insert(detail::Timer* timer);
 
-            bool runningCallback = false;
+            bool m_runningCallback = false;
             const int m_timerfd;
             EventLoop* m_loop;                     //TimerQueue所属的EventLoop
             std::vector<TimerID> m_cancelledSoon;  //即将被cancel的timer
@@ -1898,21 +1892,25 @@ namespace kurisu {
         public:
             Acceptor(EventLoop* loop, const SockAddr& listenAddr, bool reuseport);
             ~Acceptor();
-            void SetConnectionCallback(const std::function<void(int sockfd, const SockAddr&)>& cb) { m_ConnectionCallback = cb; }
-            void listen();
-            bool listening() const { return m_listening; }
+            void SetConnectionCallback(const std::function<void(int sockfd, const SockAddr&)>& cb)
+            {
+                m_connectionCallback = cb;
+            }
+            void Listen();
+            bool Listening() const { return m_listening; }
 
         private:
             //处理事件
-            void HandleRead();
+            void Handle();
 
             EventLoop* m_loop;
             detail::Socket m_sock;
             Channel m_channel;
-            std::function<void(int sockfd, const SockAddr&)> m_ConnectionCallback;
+            std::function<void(int sockfd, const SockAddr&)> m_connectionCallback;
             bool m_listening;
             int m_voidfd;  //空闲的fd,用于处理fd过多的情况
         };
+
 
         template <typename CLASS, typename... ARGS>
         class WeakCallback {
@@ -1951,22 +1949,23 @@ namespace kurisu {
             m_exiting = true;
             if (m_loop != nullptr)
             {
-                m_loop->quit();
-                m_thrd.join();
+                m_loop->Quit();
+                m_thrd.Join();
             }
         }
-        inline EventLoop* EventLoopThread::start()
+        inline EventLoop* EventLoopThread::Start()
         {
-            m_thrd.start();
+            m_thrd.Start();
             std::unique_lock locker(m_mu);
             //如果初始化未完成
             if (m_loop == nullptr)
                 m_cond.wait(locker, [this] { return m_loop != nullptr; });  //等待初始化完成
             return m_loop;
         }
-        inline void EventLoopThread::Loop()
+        inline void EventLoopThread::Handle()
         {
             EventLoop loop;
+            loop.SetTimingWheel(m_timingWheelInterval);
 
             if (m_threadInitCallback)
                 m_threadInitCallback(&loop);
@@ -1977,7 +1976,7 @@ namespace kurisu {
                 m_cond.notify_one();
             }
 
-            loop.loop();
+            loop.Loop();
             std::lock_guard locker(m_mu);
             m_loop = nullptr;
         }
@@ -1987,7 +1986,7 @@ namespace kurisu {
 
         inline EventLoopThreadPool::EventLoopThreadPool(EventLoop* loop, const std::string& name)
             : m_loop(loop), m_name(name) {}
-        inline void EventLoopThreadPool::start(const std::function<void(EventLoop*)>& threadInitCallback)
+        inline void EventLoopThreadPool::Start(int timingWheelInterval, const std::function<void(EventLoop*)>& threadInitCallback)
         {
             m_loop->AssertInLoopThread();
             m_started = true;
@@ -1996,13 +1995,17 @@ namespace kurisu {
             {
                 char name[m_name.size() + 32] = {0};
                 fmt::format_to(name, "{}{}", m_name.c_str(), i);
-                EventLoopThread* p = new EventLoopThread(threadInitCallback, name);
+                EventLoopThread* p = new EventLoopThread(timingWheelInterval, threadInitCallback, name);
                 m_thrds.emplace_back(std::unique_ptr<EventLoopThread>(p));
-                m_loops.emplace_back(p->start());
+                m_loops.emplace_back(p->Start());
             }
             //如果m_thrdNum == 0,就用当前线程执行threadInitCallback
-            if (m_thrdNum == 0 && threadInitCallback)
-                threadInitCallback(m_loop);
+            if (m_thrdNum == 0)
+            {
+                m_loop->SetTimingWheel(timingWheelInterval);
+                if (threadInitCallback)
+                    threadInitCallback(m_loop);
+            }
         }
         inline EventLoop* EventLoopThreadPool::GetNextLoop()
         {
@@ -2045,12 +2048,12 @@ namespace kurisu {
             else
                 RunCallbackWithGuard(timestamp);
         }
-        inline void Channel::tie(const std::shared_ptr<void>& obj)
+        inline void Channel::Tie(const std::shared_ptr<void>& obj)
         {
             m_tie = obj;
             m_tied = true;
         }
-        inline void Channel::remove()
+        inline void Channel::Remove()
         {
             m_inLoop = false;
             m_loop->RemoveChannel(this);
@@ -2074,7 +2077,7 @@ namespace kurisu {
 
             return str;
         }
-        inline void Channel::update()
+        inline void Channel::Update()
         {
             m_inLoop = true;
             m_loop->UpdateChannel(this);
@@ -2110,36 +2113,36 @@ namespace kurisu {
         inline void Channel::OnReading()
         {
             m_events |= k_ReadEvent;
-            update();
+            Update();
         }
         inline void Channel::OffReading()
         {
             m_events &= ~k_ReadEvent;
-            update();
+            Update();
         }
         inline void Channel::OnWriting()
         {
             m_events |= k_WriteEvent;
-            update();
+            Update();
         }
         inline void Channel::OffWriting()
         {
             m_events &= ~k_WriteEvent;
-            update();
+            Update();
         }
         inline void Channel::OffAll()
         {
             m_events = k_NoneEvent;
-            update();
+            Update();
         }
 
 
 
-        inline Timestamp Poller::poll(int timeoutMs, std::vector<Channel*>* activeChannels)
+        inline Timestamp Poller::Poll(int timeoutMs, std::vector<Channel*>* activeChannels)
         {
             LOG_TRACE << "fd total count " << m_channels.size();
             activeChannels->clear();  //删除所有active channel
-            int eventsNum = epoll_wait(m_epollfd, &*m_events.begin(), (int)m_events.size(), timeoutMs);
+            int eventsNum = epoll_wait(m_epollfd, m_events.data(), (int)m_events.size(), timeoutMs);
 
             int tmpErrno = errno;
             Timestamp now;
@@ -2180,17 +2183,17 @@ namespace kurisu {
 
                 //旧的就不用注册到ChannelMap里了
                 channel->SetStatus(k_Added);     //设置状态为已添加
-                update(EPOLL_CTL_ADD, channel);  //将channel对应的fd注册到epoll中
+                Update(EPOLL_CTL_ADD, channel);  //将channel对应的fd注册到epoll中
             }
             else  //修改
             {
                 if (channel->IsNoneEvent())  //此channel是否未注册事件
                 {
-                    update(EPOLL_CTL_DEL, channel);  //直接从epoll中删除
+                    Update(EPOLL_CTL_DEL, channel);  //直接从epoll中删除
                     channel->SetStatus(k_Deleted);   //只代表不在epoll中，不代表已经从ChannelMap中移除
                 }
                 else
-                    update(EPOLL_CTL_MOD, channel);  //修改(更新)事件
+                    Update(EPOLL_CTL_MOD, channel);  //修改(更新)事件
             }
         }
         inline bool Poller::HasChannel(Channel* channel) const
@@ -2208,7 +2211,7 @@ namespace kurisu {
             m_channels.erase(fd);  //从ChannelMap中移除
 
             if (status == k_Added)               //如果已在epoll中注册
-                update(EPOLL_CTL_DEL, channel);  //就从epoll中移除
+                Update(EPOLL_CTL_DEL, channel);  //就从epoll中移除
             channel->SetStatus(k_New);
         }
         inline const char* Poller::OperationString(int operatoin)
@@ -2225,7 +2228,7 @@ namespace kurisu {
                     return "Unknown Operation";
             }
         }
-        inline void Poller::update(int operation, Channel* channel)
+        inline void Poller::Update(int operation, Channel* channel)
         {
             epoll_event event;
             bzero(&event, sizeof(event));
@@ -2249,20 +2252,20 @@ namespace kurisu {
         inline TimerQueue::TimerQueue(EventLoop* loop)
             : m_timerfd(detail::MakeNonblockingTimerfd()), m_loop(loop), m_timerfdChannel(loop, m_timerfd)
         {
-            m_timerfdChannel.SetReadCallback(std::bind(&TimerQueue::HandleTimerfd, this));
+            m_timerfdChannel.SetReadCallback(std::bind(&TimerQueue::Handle, this));
             m_timerfdChannel.OnReading();
         }
         inline TimerQueue::~TimerQueue()
         {
             m_timerfdChannel.OffAll();
-            m_timerfdChannel.remove();
+            m_timerfdChannel.Remove();
             detail::Close(m_timerfd);
         }
-        inline TimerID TimerQueue::add(std::function<void()> callback, Timestamp when, double interval)
+        inline TimerID TimerQueue::Add(std::function<void()> callback, Timestamp when, double interval)
         {
             detail::Timer* timer = new detail::Timer(std::move(callback), when, interval);
             //在IO线程中执行addTimerInLoop,保证线程安全
-            m_loop->run(std::bind(&TimerQueue::AddInLoop, this, timer));
+            m_loop->Run(std::bind(&TimerQueue::AddInLoop, this, timer));
 
             return TimerID(timer);
         }
@@ -2270,7 +2273,7 @@ namespace kurisu {
         {
             m_loop->AssertInLoopThread();
             //插入一个Timer，有可能会使得最早到期的时间发生改变
-            bool earliestChanged = insert(timer);
+            bool earliestChanged = Insert(timer);
             //如果发生改变，就要重置最早到期的时间
             if (earliestChanged)
                 detail::ResetTimerfd(m_timerfd, timer->GetRuntime());
@@ -2281,13 +2284,13 @@ namespace kurisu {
 
             if (auto p = m_timers.find(id.Key()); p != m_timers.end())
             {
-                if (!runningCallback)
+                if (!m_runningCallback)
                     m_timers.erase(p);
                 else
                     m_cancelledSoon.emplace_back(p->second.get());
             }
         }
-        inline void TimerQueue::HandleTimerfd()
+        inline void TimerQueue::Handle()
         {
             m_loop->AssertInLoopThread();
             Timestamp now;
@@ -2296,14 +2299,14 @@ namespace kurisu {
             //获取now之前的所有Timer
             TimeoutTimer timeout = GetTimeout(now);
 
-            runningCallback = true;
+            m_runningCallback = true;
             //调用超时Timer的回调函数
             for (auto&& item : timeout)
-                item->run();
-            runningCallback = false;
+                item->Run();
+            m_runningCallback = false;
 
             //重置非一次性的Timer
-            reset(timeout);
+            Reset(timeout);
         }
         inline TimerQueue::TimeoutTimer TimerQueue::GetTimeout(Timestamp now)
         {
@@ -2320,12 +2323,12 @@ namespace kurisu {
             }
             return timeout;
         }
-        inline void TimerQueue::reset(TimeoutTimer& timeout)
+        inline void TimerQueue::Reset(TimeoutTimer& timeout)
         {
             for (auto&& item : timeout)
                 if (item->IsRepeat())
                 {
-                    item->restart();
+                    item->Restart();
                     m_timers[std::make_pair(item->GetRuntime(), item.get())] = std::move(item);
                 }
 
@@ -2342,13 +2345,13 @@ namespace kurisu {
                     std::unique_ptr<detail::Timer>& timer = m_timers.begin()->second;
                     if (timer->IsRepeat())
                     {
-                        timer->restart();
+                        timer->Restart();
                         m_timers[std::make_pair(timer->GetRuntime(), timer.get())] = std::move(timer);
                     }
                     m_timers.erase(m_timers.begin());
                 }
         }
-        inline bool TimerQueue::insert(detail::Timer* timer)
+        inline bool TimerQueue::Insert(detail::Timer* timer)
         {
             bool earliestChanged = false;
             Timestamp when = timer->GetRuntime();  //取出timer的到期时间
@@ -2365,7 +2368,7 @@ namespace kurisu {
 
         inline Acceptor::Acceptor(EventLoop* loop, const SockAddr& listenAddr, bool reuseport)
             : m_loop(loop),
-              m_sock(detail::MakeNonblockingSocket(listenAddr.famliy())),
+              m_sock(detail::MakeNonblockingSocket(listenAddr.Famliy())),
               m_channel(loop, m_sock.fd()),
               m_listening(false),
               m_voidfd(open("/dev/null", O_RDONLY | O_CLOEXEC))  //预先准备一个空闲的fd
@@ -2376,30 +2379,30 @@ namespace kurisu {
                                              // 内核会采用负载均衡的的方式分配客户端的连接请求给某一个进程或线程
 
             m_sock.bind((SockAddr*)&listenAddr);
-            m_channel.SetReadCallback(std::bind(&Acceptor::HandleRead, this));
+            m_channel.SetReadCallback(std::bind(&Acceptor::Handle, this));
         }
         inline Acceptor::~Acceptor()
         {
             m_channel.OffAll();
-            m_channel.remove();
+            m_channel.Remove();
             detail::Close(m_voidfd);
         }
-        inline void Acceptor::listen()
+        inline void Acceptor::Listen()
         {
             m_loop->AssertInLoopThread();
             m_listening = true;
             m_sock.listen();
             m_channel.OnReading();
         }
-        inline void Acceptor::HandleRead()
+        inline void Acceptor::Handle()
         {
             m_loop->AssertInLoopThread();
             SockAddr peerAddr;
 
             if (int connfd = m_sock.accept(&peerAddr); connfd >= 0)
             {
-                if (m_ConnectionCallback)
-                    m_ConnectionCallback(connfd, peerAddr);
+                if (m_connectionCallback)
+                    m_connectionCallback(connfd, peerAddr);
                 else
                     detail::Close(connfd);
             }
@@ -2431,13 +2434,13 @@ namespace kurisu {
 
         explicit Buffer(uint64_t initialSize = k_InitSize) : m_readIndex(k_PrependSize), m_writeIndex(k_PrependSize)
         {
-            m_buf = std::unique_ptr<Buf>((Buf*)malloc(sizeof(Buf) + k_PrependSize + initialSize));
+            m_buf = std::unique_ptr<Buf>((Buf*)operator new(sizeof(Buf) + k_PrependSize + initialSize));
             m_buf->len = k_PrependSize + initialSize;
         }
 
-        void swap(Buffer& other);
-        void resize(uint64_t size);
-        uint64_t size() { return m_buf->len - k_PrependSize; }
+        void Swap(Buffer& other);
+        void Resize(uint64_t size);
+        uint64_t Size() { return m_buf->len - k_PrependSize; }
 
         uint64_t ReadableBytes() const { return m_writeIndex - m_readIndex; }
         uint64_t WriteableBytes() const { return m_buf->len - m_writeIndex; }
@@ -2449,12 +2452,12 @@ namespace kurisu {
         const char* FindEOL() const { return (const char*)memchr(ReadIndex(), '\n', ReadableBytes()); }
         const char* FindEOL(const char* start) const { return (const char*)memchr(start, '\n', WriteIndex() - start); }
 
-        void drop(uint64_t len);
-        void DropUntil(const char* end) { drop(end - ReadIndex()); }
-        void DropInt64() { drop(sizeof(int64_t)); }
-        void DropInt32() { drop(sizeof(int)); }
-        void DropInt16() { drop(sizeof(int16_t)); }
-        void DropInt8() { drop(sizeof(int8_t)); }
+        void Drop(uint64_t len);
+        void DropUntil(const char* end) { Drop(end - ReadIndex()); }
+        void DropInt64() { Drop(sizeof(int64_t)); }
+        void DropInt32() { Drop(sizeof(int)); }
+        void DropInt16() { Drop(sizeof(int16_t)); }
+        void DropInt8() { Drop(sizeof(int8_t)); }
         void DropAll() { m_readIndex = m_writeIndex = k_PrependSize; }
 
         std::string RetrieveAllAsString() { return RetrieveAsString(ReadableBytes()); }
@@ -2463,17 +2466,17 @@ namespace kurisu {
         std::string_view ToStringView() const { return std::string_view(ReadIndex(), ReadableBytes()); }
         std::string ToString() const { return std::string(ReadIndex(), ReadableBytes()); }
 
-        void append(const char* data, uint64_t len);
-        void append(const void* data, uint64_t len) { append((const char*)data, len); }
-        void append(const std::string_view& str) { append(str.data(), str.size()); }
+        void Append(const char* data, uint64_t len);
+        void Append(const void* data, uint64_t len) { Append((const char*)data, len); }
+        void Append(const std::string_view& str) { Append(str.data(), str.size()); }
         void AppendInt64(int64_t x);
         void AppendInt32(int x);
         void AppendInt16(int16_t x);
-        void AppendInt8(int8_t x) { append(&x, sizeof(x)); }
+        void AppendInt8(int8_t x) { Append(&x, sizeof(x)); }
 
-        const char* ReadIndex() const { return begin() + m_readIndex; }
-        char* WriteIndex() { return begin() + m_writeIndex; }
-        const char* WriteIndex() const { return begin() + m_writeIndex; }
+        const char* ReadIndex() const { return Begin() + m_readIndex; }
+        char* WriteIndex() { return Begin() + m_writeIndex; }
+        const char* WriteIndex() const { return Begin() + m_writeIndex; }
 
         int64_t ReadInt64();
         int ReadInt32();
@@ -2488,21 +2491,21 @@ namespace kurisu {
         void PrependInt64(int64_t x);
         void PrependInt32(int x);
         void PrependInt16(int16_t x);
-        void PrependInt8(int8_t x) { prepend(&x, sizeof(x)); }
+        void PrependInt8(int8_t x) { Prepend(&x, sizeof(x)); }
 
-        void shrink(uint64_t reserve);
+        void Shrink(uint64_t reserve);
 
-        uint64_t capacity() const { return m_buf->len; }
+        uint64_t Capacity() const { return m_buf->len; }
 
         ssize_t ReadSocket(int fd, int* savedErrno);
 
     private:
-        void prepend(const void* data, uint64_t len);
+        void Prepend(const void* data, uint64_t len);
         void EnsureWritableBytes(uint64_t len);
         void WriteIndexRightShift(uint64_t len) { m_writeIndex += len; }
         void WriteIndexLeftShift(uint64_t len) { m_writeIndex -= len; }
-        char* begin() { return (char*)m_buf->ptr; }
-        const char* begin() const { return (const char*)m_buf->ptr; }
+        char* Begin() { return (char*)m_buf->ptr; }
+        const char* Begin() const { return (const char*)m_buf->ptr; }
         void MakeSpace(uint64_t len);
         ssize_t Read(int fd, int* savedErrno);
         ssize_t Readv(int fd, int* savedErrno);
@@ -2524,33 +2527,33 @@ namespace kurisu {
         //获取所在的EventLoop
         EventLoop* GetLoop() const { return m_loop; }
         //获取名称
-        const std::string& name() const { return m_name; }
+        const std::string& Name() const { return m_name; }
         //本地地址
         const SockAddr& LocalAddr() const { return m_localAddr; }
         //远端地址
         const SockAddr& PeerAddr() const { return m_peerAddr; }
         //是否已连接
-        bool connected() const { return m_status == k_Connected; }
+        bool Connected() const { return m_status == k_Connected; }
         //是否已断开连接
-        bool disconnected() const { return m_status == k_Disconnected; }
+        bool Disconnected() const { return m_status == k_Disconnected; }
         // return true if success.
         bool GetTcpInfo(struct tcp_info* tcpi) const { return m_socket->GetTcpInfo(tcpi); }
         std::string GetTcpInfoString() const;
 
-        void send(std::string&& msg);  // C++11
-        void send(const void* data, int len) { send(std::string_view((const char*)data, len)); }
-        void send(const std::string_view& msg);
-        void send(Buffer* buf);
+        void Send(std::string&& msg);  // C++11
+        void Send(const void* data, int len) { Send(std::string_view((const char*)data, len)); }
+        void Send(const std::string_view& msg);
+        void Send(Buffer* buf);
         //线程不安全,不能跨线程调用
-        void shutdown();
+        void ShutDown();
 
         void ForceClose();
         void ForceCloseWithDelay(double seconds);
         //设置TcpNoDelay
-        void SetTcpNoDelay(bool on);
+        void SetTcpNoDelay(bool on) { m_socket->SetTcpNoDelay(on); }
 
-        void StartRead() { m_loop->run(std::bind(&TcpConnection::StartReadInLoop, this)); }
-        void StopRead() { m_loop->run(std::bind(&TcpConnection::StopReadInLoop, this)); }
+        void StartRead() { m_loop->Run(std::bind(&TcpConnection::StartReadInLoop, this)); }
+        void StopRead() { m_loop->Run(std::bind(&TcpConnection::StopReadInLoop, this)); }
         //线程不安全
         bool IsReading() const { return m_reading; }
         //连接建立 销毁 产生关闭事件时 都会调用这个回调函数
@@ -2585,6 +2588,11 @@ namespace kurisu {
         //当TcpServer remove一个连接或自身析构时会调用这个函数
         void ConnectDestroyed();
 
+        void SetAny(std::any& any) { m_any = any; }
+        void SetAny(std::any&& any) { m_any = std::move(any); }
+        const std::any& GetAny() const { return m_any; }
+        std::any& GetAny() { return m_any; }
+
     private:
         void HandleRead(Timestamp receiveTime);
         void HandleWrite();
@@ -2611,6 +2619,7 @@ namespace kurisu {
         bool m_reading;            //是否正在read
         std::unique_ptr<detail::Socket> m_socket;
         std::unique_ptr<detail::Channel> m_channel;
+        std::any m_any;
         const SockAddr m_localAddr;  //本地地址
         const SockAddr m_peerAddr;   //对端地址
         std::function<void(const std::shared_ptr<TcpConnection>&)> m_connCallback;
@@ -2622,29 +2631,30 @@ namespace kurisu {
         Buffer m_outputBuf;
     };
 
+
     class TcpServer : detail::uncopyable {
     public:
-        using ThreadInitCallback = std::function<void(EventLoop*)>;
         enum Option {
-            kNoReusePort,
-            kReusePort,
+            k_NoReusePort,
+            k_ReusePort,
         };
 
-        TcpServer(EventLoop* loop, const SockAddr& listenAddr, const std::string& name, Option option = kNoReusePort);
+        TcpServer(EventLoop* loop, const SockAddr& listenAddr, const std::string& name, Option option = k_NoReusePort);
         ~TcpServer();
 
-        const std::string& IpPort() const { return m_ipPort; }
-        const std::string& name() const { return m_name; }
+        const std::string& ipPort() const { return m_ipPort; }
+        const std::string& Name() const { return m_name; }
         EventLoop* GetLoop() const { return m_loop; }
         //必须在start之前调用
-        void SetThreadNum(int numThreads) { m_threadPool->SetThreadNum(numThreads); }
+        void SetThreadNum(int num) { m_threadPool->SetThreadNum(num); }
         //必须在start之前调用
-        void SetThreadInitCallback(const ThreadInitCallback& callback) { m_threadInitCallback = callback; }
+        void SetThreadInitCallback(const std::function<void(EventLoop*)>& callback) { m_threadInitCallback = callback; }
+        void SetTcpNoDelay(bool on) { m_tcpNoDelay = on; }
         // 必须在start之后调用
         std::shared_ptr<detail::EventLoopThreadPool> GetThreadPool() { return m_threadPool; }
 
         //启动,线程安全
-        void start();
+        void Start();
         //连接到来或连接关闭时回调的函数,线程不安全
         void SetConnectionCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
         {
@@ -2661,6 +2671,8 @@ namespace kurisu {
             m_writeDoneCallback = callback;
         }
 
+        void SetTimingWheel(int interval) { m_timingWheelInterval = interval; }
+
     private:
         using ConnectionMap = std::map<std::string, std::shared_ptr<TcpConnection>>;
         //连接到来时会回调的函数
@@ -2671,8 +2683,10 @@ namespace kurisu {
         void RemoveConnectionInLoop(const std::shared_ptr<TcpConnection>& conn);
 
     private:
+        bool m_tcpNoDelay = false;
         std::atomic_bool m_started = false;
         int m_nextConnID;
+        int m_timingWheelInterval = 0;
         std::unique_ptr<detail::Acceptor> m_acceptor;
         EventLoop* m_loop;  // TcpServer所属的EventLoop
         std::shared_ptr<detail::EventLoopThreadPool> m_threadPool;
@@ -2686,11 +2700,54 @@ namespace kurisu {
     };
 
     namespace detail {
+        class TcpConnectionTimingWheel {
+        private:
+            class Entry {
+            public:
+                explicit Entry(std::weak_ptr<TcpConnection> weak) : m_weak(weak) {}
+
+                ~Entry()
+                {
+                    if (auto conn = m_weak.lock(); conn)
+                        conn->ShutDown();
+                }
+
+            private:
+                std::weak_ptr<TcpConnection> m_weak;
+            };
+
+        public:
+            //second
+            TcpConnectionTimingWheel(EventLoop* loop, int interval)
+            {
+                m_buckets.resize(interval);
+                loop->RunEvery(1.0, [this] { m_buckets.push_back(Bucket()); });
+            }
+            void PushAndSetAny(const std::shared_ptr<TcpConnection>& conn)
+            {
+                auto entry = std::make_shared<Entry>(conn);
+                conn->SetAny(std::weak_ptr<Entry>(entry));
+                m_buckets.back().insert(std::move(entry));
+            }
+            void Update(const std::shared_ptr<TcpConnection>& conn)
+            {
+                auto weak = std::any_cast<std::weak_ptr<Entry>>(conn->GetAny());
+                if (auto entry = weak.lock(); entry)
+                    m_buckets.back().insert(std::move(entry));
+            }
+
+        private:
+            using Bucket = std::set<std::shared_ptr<Entry>>;
+            boost::circular_buffer<Bucket> m_buckets;
+        };
+
+
+
         inline void DefaultConnCallback(const std::shared_ptr<kurisu::TcpConnection>& conn)
         {
             LOG_TRACE << conn->LocalAddr().ipPortString() << " -> "
                       << conn->PeerAddr().ipPortString() << " is "
-                      << (conn->connected() ? "Connected" : "Disconnected");
+                      << (conn->Connected() ? "Connected" : "Disconnected");
         }
         inline void DefaultMsgCallback(const std::shared_ptr<kurisu::TcpConnection>&, kurisu::Buffer* buf, kurisu::Timestamp)
         {
@@ -2707,25 +2764,25 @@ namespace kurisu {
 
     inline char* Timestamp::GmLogFormat(char* buf) const
     {
-        uint64_t us = usSinceEpoch() - secondsSinceEpoch() * 1'000'000;
+        uint64_t us = UsSinceEpoch() - SecondsSinceEpoch() * 1'000'000;
         return fmt::format_to(buf, FMT_COMPILE("[{:%F %T}.{:06}] "), fmt::gmtime(m_stamp), us);
     }
     inline char* Timestamp::LocalLogFormat(char* buf) const
     {
-        uint64_t us = usSinceEpoch() - secondsSinceEpoch() * 1'000'000;
+        uint64_t us = UsSinceEpoch() - SecondsSinceEpoch() * 1'000'000;
         return fmt::format_to(buf, FMT_COMPILE("[{:%F %T}.{:06}] "), fmt::localtime(m_stamp), us);
     }
-    inline int64_t Timestamp::usSinceEpoch() const
+    inline int64_t Timestamp::UsSinceEpoch() const
     {
         using namespace std::chrono;
         return duration_cast<microseconds>(m_stamp.time_since_epoch()).count();
     }
-    inline int64_t Timestamp::nsSinceEpoch() const
+    inline int64_t Timestamp::NsSinceEpoch() const
     {
         using namespace std::chrono;
         return duration_cast<nanoseconds>(m_stamp.time_since_epoch()).count();
     }
-    inline int64_t Timestamp::secondsSinceEpoch() const
+    inline int64_t Timestamp::SecondsSinceEpoch() const
     {
         using namespace std::chrono;
         return duration_cast<seconds>(m_stamp.time_since_epoch()).count();
@@ -2749,7 +2806,7 @@ namespace kurisu {
 
 
     inline Logger::Formatter::Formatter(LogLevel level, int savedErrno, std::string_view file, int line)
-        : m_time(Timestamp::now()), m_strm(), m_level(level), m_line(line)
+        : m_time(Timestamp::Now()), m_strm(), m_level(level), m_line(line)
     {
         if (auto slash = file.rfind('/'); slash != std::string_view::npos)
         {
@@ -2759,7 +2816,7 @@ namespace kurisu {
         m_fileNameSize = file.size();
 
         FormatTime();
-        this_thrd::tid();
+        this_thrd::Tid();
         m_strm << '[' << detail::KnownLengthString(this_thrd::TidString(), this_thrd::TidStringLength()) << ']' << " ";
         m_strm << detail::KnownLengthString(detail::LogLevelName[(int)level], 8);
         if (savedErrno != 0)
@@ -2771,9 +2828,9 @@ namespace kurisu {
         static KnownLengthString timeString(t_time, 0);
         char* p = nullptr;
 
-        if (m_time.secondsSinceEpoch() != t_lastSecond)
+        if (m_time.SecondsSinceEpoch() != t_lastSecond)
         {
-            t_lastSecond = m_time.secondsSinceEpoch();
+            t_lastSecond = m_time.SecondsSinceEpoch();
             if (!s_isLocalTimeZone)
                 p = m_time.GmLogFormat(t_time);
             else
@@ -2785,7 +2842,7 @@ namespace kurisu {
 
         m_strm << timeString;
     }
-    inline void Logger::Formatter::finish()
+    inline void Logger::Formatter::Finish()
     {
         m_strm << " - " << detail::KnownLengthString(m_fileName, m_fileNameSize) << ':' << m_line << '\n';
     }
@@ -2798,11 +2855,11 @@ namespace kurisu {
     inline Logger::~Logger()
     {
         using namespace std::chrono;
-        m_fmt.finish();
+        m_fmt.Finish();
 
-        const detail::LogStream::Buf& buf(stream().buffer());
+        const detail::LogStream::FixedBuf& buf(Stream().Buffer());
 
-        detail::g_output(buf.data(), buf.size());
+        detail::g_output(buf.Data(), buf.Size());
 
         if (m_fmt.m_level == LogLevel::FATAL)
         {
@@ -2810,7 +2867,7 @@ namespace kurisu {
             abort();
         }
     }
-    inline Logger::LogLevel Logger::level() { return detail::g_logLevel; }
+    inline Logger::LogLevel Logger::Level() { return detail::g_logLevel; }
     inline void Logger::SetOutput(void (*out)(const char* msg, const uint64_t len)) { detail::g_output = out; }
     inline void Logger::SetFlush(void (*flush)()) { detail::g_flush = flush; }
     class Logger::SetLogLevel {
@@ -2825,30 +2882,30 @@ namespace kurisu {
 
 
 
-    inline void SyncLogFile::append(const char* logline, uint64_t len)
+    inline void SyncLogFile::Append(const char* logline, uint64_t len)
     {
         if (m_mu)
         {
             std::lock_guard locker(*m_mu);
-            append_unlocked(logline, len);
+            AppendUnlocked(logline, len);
         }
         else
-            append_unlocked(logline, len);
+            AppendUnlocked(logline, len);
     }
-    inline void SyncLogFile::flush()
+    inline void SyncLogFile::Flush()
     {
         if (m_mu)
         {
             std::lock_guard locker(*m_mu);
-            m_appender->flush();
+            m_appender->Flush();
         }
         else
-            m_appender->flush();
+            m_appender->Flush();
     }
-    inline bool SyncLogFile::roll()
+    inline bool SyncLogFile::Roll()
     {
         auto timestamp = Timestamp();
-        time_t now = timestamp.as_time_t();
+        time_t now = timestamp.As_time_t();
 
         //每过0点day+1
         time_t day = now / k_OneDaySeconds * k_OneDaySeconds;
@@ -2879,28 +2936,28 @@ namespace kurisu {
         filename += '.';
         filename += process::HostName();
 
-        filename += fmt::format(".{}", process::pid());
+        filename += fmt::format(".{}", process::Pid());
 
         filename += ".log";
         return filename;
     }
-    inline void SyncLogFile::append_unlocked(const char* logline, const uint64_t len)
+    inline void SyncLogFile::AppendUnlocked(const char* logline, const uint64_t len)
     {
-        m_appender->append(logline, len);
+        m_appender->Append(logline, len);
 
         if (m_appender->WrittenBytes() > (uint64_t)k_RollSize)  //如果写入的大小>rollSize就roll
-            roll();
+            Roll();
         else if (++m_count >= k_CheckEveryN)
         {
             m_count = 0;  //如果写入次数>=这个数就重新计数
             time_t now = time(0);
             time_t day = now / k_OneDaySeconds * k_OneDaySeconds;
             if (day != m_day)  //如果过了0点就roll
-                roll();
+                Roll();
             else if (now - m_lastFlush > (time_t)k_FlushInterval)  //没过0点就flush
             {
                 m_lastFlush = now;
-                m_appender->flush();
+                m_appender->Flush();
             }
         }
     }
@@ -2912,29 +2969,29 @@ namespace kurisu {
           m_isLocalTimeZone(localTimeZone),
           m_fileName(basename),
           m_rollSize(rollSize),
-          m_thrd(std::bind(&AsyncLogFile::Loop, this), "Async Logger"),
-          m_thisBuf(std::make_unique<Buf>()),
-          m_nextBuf(std::make_unique<Buf>())
+          m_thrd(std::bind(&AsyncLogFile::Handle, this), "Async Logger"),
+          m_thisBuf(std::make_unique<FixedBuf>()),
+          m_nextBuf(std::make_unique<FixedBuf>())
     {
-        m_thisBuf->zero();
-        m_nextBuf->zero();
+        m_thisBuf->Zero();
+        m_nextBuf->Zero();
         m_bufs.reserve(16);
         Logger::SetTimeZone(m_isLocalTimeZone);
 
         m_running = true;
-        m_thrd.start();
-        m_latch.wait();
+        m_thrd.Start();
+        m_latch.Wait();
     }
     inline AsyncLogFile::~AsyncLogFile()
     {
         if (m_running)
-            stop();
+            Stop();
     }
-    inline void AsyncLogFile::append(const char* logline, uint64_t len)
+    inline void AsyncLogFile::Append(const char* logline, uint64_t len)
     {
         std::lock_guard locker(m_mu);
         if (m_thisBuf->AvalibleSize() > len)  //没满
-            m_thisBuf->append(logline, len);
+            m_thisBuf->Append(logline, len);
         else  //满了
         {
             m_bufs.push_back(std::move(m_thisBuf));  //将此buf加入待输出的队列
@@ -2942,28 +2999,28 @@ namespace kurisu {
             if (m_nextBuf)
                 m_thisBuf = std::move(m_nextBuf);  //拿下一个空的buf
             else
-                m_thisBuf.reset(new Buf);  // 没有空buf了就创建一个新的，但几乎不会发生
+                m_thisBuf.reset(new FixedBuf);  // 没有空buf了就创建一个新的，但几乎不会发生
 
-            m_thisBuf->append(logline, len);
+            m_thisBuf->Append(logline, len);
             m_fullCond.notify_one();  //通知其他线程，buf满了
         }
     }
-    inline void AsyncLogFile::stop()
+    inline void AsyncLogFile::Stop()
     {
         m_running = false;
         m_fullCond.notify_one();
-        m_thrd.join();
+        m_thrd.Join();
     }
-    inline void AsyncLogFile::Loop()
+    inline void AsyncLogFile::Handle()
     {
         m_latch.CountDown();
         SyncLogFile logFile(m_fileName, m_rollSize, m_isLocalTimeZone, false);
 
         //准备两个空的Buf
-        BufPtr newBuf1(new Buf);
-        BufPtr newBuf2(new Buf);
-        newBuf1->zero();
-        newBuf2->zero();
+        BufPtr newBuf1(new FixedBuf);
+        BufPtr newBuf2(new FixedBuf);
+        newBuf1->Zero();
+        newBuf2->Zero();
 
         BufVector bufVec;  //空Buf
         bufVec.reserve(16);
@@ -2990,13 +3047,13 @@ namespace kurisu {
             {
                 char buf[256];
                 fmt::format_to(buf, "Dropped log messages at {}, {} larger buffers\n",
-                               Timestamp::now().GmFormatString(), bufVec.size() - 2);
+                               Timestamp::Now().GmFormatString(), bufVec.size() - 2);
                 fputs(buf, stderr);
-                logFile.append(buf, strlen(buf));
+                logFile.Append(buf, strlen(buf));
                 bufVec.erase(bufVec.begin() + 2, bufVec.end());  //处理方法是将buf都舍弃掉，只留下两个，废物利用
             }
             for (auto&& item : bufVec)  //遍历，输出所有要输出的buf
-                logFile.append(item->data(), item->size());
+                logFile.Append(item->Data(), item->Size());
 
             if (bufVec.size() > 2)
                 bufVec.resize(2);  // 丢掉所有的buf，留两个是为了给之后newBuf1和newBuf2用，属于废物利用
@@ -3005,20 +3062,20 @@ namespace kurisu {
             {
                 newBuf1 = std::move(bufVec.back());
                 bufVec.pop_back();
-                newBuf1->reset();
+                newBuf1->Reset();
             }
 
             if (!newBuf2)  //如果newBuf2被用了也补上
             {
                 newBuf2 = std::move(bufVec.back());
                 bufVec.pop_back();
-                newBuf2->reset();
+                newBuf2->Reset();
             }
 
             bufVec.clear();
-            logFile.flush();
+            logFile.Flush();
         }
-        logFile.flush();
+        logFile.Flush();
     }
 
 
@@ -3038,14 +3095,14 @@ namespace kurisu {
     }
     inline uint16_t SockAddr::HostPort() const
     {
-        if (famliy() == AF_INET)
+        if (Famliy() == AF_INET)
             return ntohs(sin.sin_port);
         else
             return ntohs(sin6.sin6_port);
     }
     inline uint16_t SockAddr::NetPort() const
     {
-        if (famliy() == AF_INET)
+        if (Famliy() == AF_INET)
             return sin.sin_port;
         else
             return sin6.sin6_port;
@@ -3055,7 +3112,7 @@ namespace kurisu {
 
     inline EventLoop::EventLoop()
         : m_wakeUpfd(detail::CreateEventfd()),
-          m_threadID(this_thrd::tid()),
+          m_threadID(this_thrd::Tid()),
           m_poller(std::make_unique<detail::Poller>(this)),
           timerQueue_(std::make_unique<detail::TimerQueue>(this)),
           m_wakeUpChannel(std::make_unique<detail::Channel>(this, m_wakeUpfd))
@@ -3073,15 +3130,17 @@ namespace kurisu {
     inline EventLoop::~EventLoop()
     {
         LOG_DEBUG << "EventLoop " << this << " of thread " << m_threadID
-                  << " destructs in thread " << this_thrd::tid();
+                  << " destructs in thread " << this_thrd::Tid();
         m_wakeUpChannel->OffAll();
-        m_wakeUpChannel->remove();
+        m_wakeUpChannel->Remove();
         detail::Close(m_wakeUpfd);
         detail::t_loopOfThisThread = nullptr;
     }
-    inline void EventLoop::loop()
+    inline void EventLoop::Loop()
     {
         AssertInLoopThread();
+        if (m_timingWheelInterval != 0)
+            m_timingWheel = std::make_unique<detail::TcpConnectionTimingWheel>(this, m_timingWheelInterval);
         m_looping = true;
         m_quit = false;
         LOG_TRACE << "EventLoop " << this << " start looping";
@@ -3089,10 +3148,10 @@ namespace kurisu {
         while (!m_quit)
         {
             //没事的时候loop会阻塞在这里
-            m_returnTime = m_poller->poll(detail::k_PollTimeoutMs, &m_activeChannels);
+            m_returnTime = m_poller->Poll(detail::k_PollTimeoutMs, &m_activeChannels);
             m_loopNum++;
 
-            if (Logger::level() <= Logger::LogLevel::TRACE)
+            if (Logger::Level() <= Logger::LogLevel::TRACE)
                 PrintActiveChannels();  //将发生的事件写入日志
             m_runningCallback = true;
             //执行每个有事件到来的channel的回调函数
@@ -3106,13 +3165,13 @@ namespace kurisu {
         LOG_TRACE << "EventLoop " << this << " stop looping";
         m_looping = false;
     }
-    inline void EventLoop::quit()
+    inline void EventLoop::Quit()
     {
         m_quit = true;
         if (!InLoopThread())
-            wakeup();
+            Wakeup();
     }
-    inline void EventLoop::run(std::function<void()> callback)
+    inline void EventLoop::Run(std::function<void()> callback)
     {
         if (InLoopThread())
             callback();
@@ -3127,14 +3186,14 @@ namespace kurisu {
         }
 
         if (!InLoopThread() || m_runningExtraFunc)
-            wakeup();
+            Wakeup();
     }
     inline uint64_t EventLoop::GetExtraFuncsNum() const
     {
         std::lock_guard lock(m_mu);
         return m_waitingExtraFuncs.size();
     }
-    inline void EventLoop::wakeup()
+    inline void EventLoop::Wakeup()
     {
         uint64_t one = 1;
         ssize_t n = write(m_wakeUpfd, &one, sizeof(one));
@@ -3191,33 +3250,36 @@ namespace kurisu {
         if (!InLoopThread())
             LOG_FATAL << "EventLoop::abortNotInLoopThread - EventLoop " << this
                       << " was created in threadID_ = " << m_threadID
-                      << ", current thread id = " << this_thrd::tid();
+                      << ", current thread id = " << this_thrd::Tid();
     }
-    inline TimerID EventLoop::runAt(Timestamp time, std::function<void()> callback)
+    inline TimerID EventLoop::RunAt(Timestamp time, std::function<void()> callback)
     {
-        return timerQueue_->add(std::move(callback), time, 0.0);
+        return timerQueue_->Add(std::move(callback), time, 0.0);
     }
-    inline TimerID EventLoop::runAfter(double delay, std::function<void()> callback)
+    inline TimerID EventLoop::RunAfter(double delay, std::function<void()> callback)
     {
-        Timestamp time(Timestamp::AddTime(Timestamp::now(), delay));
-        return runAt(time, std::move(callback));
+        Timestamp time(Timestamp::AddTime(Timestamp::Now(), delay));
+        return RunAt(time, std::move(callback));
     }
-    inline TimerID EventLoop::runEvery(double interval, std::function<void()> callback)
+    inline TimerID EventLoop::RunEvery(double interval, std::function<void()> callback)
     {
-        Timestamp time(Timestamp::AddTime(Timestamp::now(), interval));
-        return timerQueue_->add(std::move(callback), time, interval);
+        Timestamp time(Timestamp::AddTime(Timestamp::Now(), interval));
+        return timerQueue_->Add(std::move(callback), time, interval);
     }
-    inline void EventLoop::cancel(TimerID timerID) { return timerQueue_->cancel(timerID); }
+    inline void EventLoop::Cancel(TimerID timerID) { return timerQueue_->Cancel(timerID); }
+    inline void EventLoop::AddToTimingWheel(const std::shared_ptr<TcpConnection>& conn) { m_timingWheel->PushAndSetAny(conn); }
+    inline void EventLoop::UpdateTimingWheel(const std::shared_ptr<TcpConnection>& conn) { m_timingWheel->Update(conn); }
 
 
 
-    inline void Buffer::swap(Buffer& other)
+
+    inline void Buffer::Swap(Buffer& other)
     {
         std::swap(m_buf, other.m_buf);
         std::swap(m_readIndex, other.m_readIndex);
         std::swap(m_writeIndex, other.m_writeIndex);
     }
-    inline void Buffer::resize(uint64_t new_size)
+    inline void Buffer::Resize(uint64_t new_size)
     {
         m_buf = std::unique_ptr<Buf>((Buf*)realloc(m_buf.release(), sizeof(Buf) + k_PrependSize + new_size));
         m_buf->len = k_PrependSize + new_size;
@@ -3232,7 +3294,7 @@ namespace kurisu {
         const char* crlf = std::search(start, WriteIndex(), k_CRLF, k_CRLF + 2);
         return crlf == WriteIndex() ? NULL : crlf;
     }
-    inline void Buffer::drop(uint64_t len)
+    inline void Buffer::Drop(uint64_t len)
     {
         if (len < ReadableBytes())
             m_readIndex += len;
@@ -3242,10 +3304,10 @@ namespace kurisu {
     inline std::string Buffer::RetrieveAsString(uint64_t len)
     {
         std::string res(ReadIndex(), len);
-        drop(len);
+        Drop(len);
         return res;
     }
-    inline void Buffer::append(const char* data, uint64_t len)
+    inline void Buffer::Append(const char* data, uint64_t len)
     {
         EnsureWritableBytes(len);
         memcpy(WriteIndex(), data, len);
@@ -3259,17 +3321,17 @@ namespace kurisu {
     inline void Buffer::AppendInt64(int64_t x)
     {
         int64_t val = htonll(x);
-        append(&val, sizeof(val));
+        Append(&val, sizeof(val));
     }
     inline void Buffer::AppendInt32(int x)
     {
         int val = htonl(x);
-        append(&val, sizeof(val));
+        Append(&val, sizeof(val));
     }
     inline void Buffer::AppendInt16(int16_t x)
     {
         int16_t val = htons(x);
-        append(&val, sizeof(val));
+        Append(&val, sizeof(val));
     }
     inline int64_t Buffer::ReadInt64()
     {
@@ -3316,40 +3378,40 @@ namespace kurisu {
     inline void Buffer::PrependInt64(int64_t x)
     {
         int64_t val = htonll(x);
-        prepend(&val, sizeof(val));
+        Prepend(&val, sizeof(val));
     }
     inline void Buffer::PrependInt32(int x)
     {
         int val = htonl(x);
-        prepend(&val, sizeof(val));
+        Prepend(&val, sizeof(val));
     }
     inline void Buffer::PrependInt16(int16_t x)
     {
         int16_t val = htons(x);
-        prepend(&val, sizeof(val));
+        Prepend(&val, sizeof(val));
     }
-    inline void Buffer::prepend(const void* data, uint64_t len)
+    inline void Buffer::Prepend(const void* data, uint64_t len)
     {
         if (m_readIndex < len)
             LOG_FATAL << "in Buffer::prepend   lack of PrependableBytes";
         m_readIndex -= len;
         memcmp(ReadIndex(), (const char*)data, len);
     }
-    inline void Buffer::shrink(uint64_t reserve)
+    inline void Buffer::Shrink(uint64_t reserve)
     {
         Buffer other;
         other.EnsureWritableBytes(reserve);
-        other.append(ToStringView());
-        swap(other);
+        other.Append(ToStringView());
+        Swap(other);
     }
     inline void Buffer::MakeSpace(uint64_t len)
     {
         if (WriteableBytes() + PrependableBytes() < len + k_PrependSize)
-            resize(m_writeIndex + len);  //不够就开辟一片新的地方
+            Resize(m_writeIndex + len);  //不够就开辟一片新的地方
         else
         {  //够就把数据移到最前面,后面就是space
             uint64_t readable = ReadableBytes();
-            char* p = begin();
+            char* p = Begin();
             memcpy(p + k_PrependSize, p + m_readIndex, readable);
             m_readIndex = k_PrependSize;
             m_writeIndex = m_readIndex + readable;
@@ -3357,7 +3419,7 @@ namespace kurisu {
     }
     inline ssize_t Buffer::ReadSocket(int fd, int* savedErrno)  //TODO   热点
     {
-        if (size() < 81920)
+        if (Size() < 81920)
             return Readv(fd, savedErrno);
         else
             return Read(fd, savedErrno);
@@ -3392,8 +3454,8 @@ namespace kurisu {
         //Buffer空间不够
         else
         {
-            m_writeIndex = capacity();
-            append(tmpBuf, n - writable);
+            m_writeIndex = Capacity();
+            Append(tmpBuf, n - writable);
         }
 
         return n;
@@ -3430,7 +3492,7 @@ namespace kurisu {
         m_socket->GetTcpInfoString(buf);
         return buf;
     }
-    inline void TcpConnection::send(std::string&& msg)
+    inline void TcpConnection::Send(std::string&& msg)
     {
         if (m_status == k_Connected)
         {
@@ -3441,7 +3503,7 @@ namespace kurisu {
                 m_loop->AddExtraFunc(std::bind(&TcpConnection::SendStringView, this, msg));
         }
     }
-    inline void TcpConnection::send(const std::string_view& msg)
+    inline void TcpConnection::Send(const std::string_view& msg)
     {
         if (m_status == k_Connected)
         {
@@ -3452,7 +3514,7 @@ namespace kurisu {
                 m_loop->AddExtraFunc(std::bind(&TcpConnection::SendStringView, this, std::string(msg)));
         }
     }
-    inline void TcpConnection::send(Buffer* buf)
+    inline void TcpConnection::Send(Buffer* buf)
     {
         if (m_status == k_Connected)
         {
@@ -3466,12 +3528,12 @@ namespace kurisu {
                 m_loop->AddExtraFunc(std::bind(&TcpConnection::SendStringView, this, buf->RetrieveAllAsString()));
         }
     }
-    inline void TcpConnection::shutdown()
+    inline void TcpConnection::ShutDown()
     {
         if (m_status == k_Connected)
         {
             m_status = k_Disconnecting;
-            m_loop->run(std::bind(&TcpConnection::ShutdownInLoop, shared_from_this()));
+            m_loop->Run(std::bind(&TcpConnection::ShutdownInLoop, shared_from_this()));
         }
     }
     inline void TcpConnection::ForceClose()
@@ -3487,14 +3549,14 @@ namespace kurisu {
         if (m_status == k_Connected || m_status == k_Disconnecting)
         {
             m_status = k_Disconnecting;
-            m_loop->runAfter(seconds, detail::MakeWeakCallback(shared_from_this(), &TcpConnection::ForceClose));
+            m_loop->RunAfter(seconds, detail::MakeWeakCallback(shared_from_this(), &TcpConnection::ForceClose));
         }
     }
     inline void TcpConnection::ConnectEstablished()
     {
         m_loop->AssertInLoopThread();
         m_status = k_Connected;
-        m_channel->tie(shared_from_this());  //使Channel生命周期与TcpConnection对象相同
+        m_channel->Tie(shared_from_this());  //使Channel生命周期与TcpConnection对象相同
         m_channel->OnReading();              //将channel添加到Poller中
         m_connCallback(shared_from_this());  //调用用户注册的回调函数
     }
@@ -3507,7 +3569,7 @@ namespace kurisu {
             m_channel->OffAll();
             m_connCallback(shared_from_this());
         }
-        m_channel->remove();
+        m_channel->Remove();
     }
     inline void TcpConnection::HandleRead(Timestamp receiveTime)
     {
@@ -3536,7 +3598,7 @@ namespace kurisu {
             ssize_t n = write(m_channel->fd(), m_outputBuf.ReadIndex(), m_outputBuf.ReadableBytes());
             if (n > 0)
             {
-                m_outputBuf.drop(n);  //调整index
+                m_outputBuf.Drop(n);  //调整index
                 //如果写完了
                 if (m_outputBuf.ReadableBytes() == 0)
                 {
@@ -3626,7 +3688,7 @@ namespace kurisu {
             if (bufRemain + remain >= m_highWaterMark && bufRemain < m_highWaterMark && m_highWaterMarkCallback)
                 m_loop->AddExtraFunc(std::bind(m_highWaterMarkCallback, shared_from_this(), bufRemain + remain));
             //把剩下的数据写入outputBuf中
-            m_outputBuf.append((const char*)data + n, remain);
+            m_outputBuf.Append((const char*)data + n, remain);
             //如果channel之前没监听写事件,就开启监听
             if (!m_channel->IsWriting())
                 m_channel->OnWriting();
@@ -3680,10 +3742,9 @@ namespace kurisu {
     }
 
 
-
     inline TcpServer::TcpServer(EventLoop* loop, const SockAddr& listenAddr, const std::string& name, Option option)
         : m_nextConnID(1),
-          m_acceptor(std::make_unique<detail::Acceptor>(loop, listenAddr, option == kReusePort)),
+          m_acceptor(std::make_unique<detail::Acceptor>(loop, listenAddr, option == k_ReusePort)),
           m_loop(loop),
           m_threadPool(std::make_shared<detail::EventLoopThreadPool>(loop, name)),
           m_ipPort(listenAddr.ipPortString()),
@@ -3694,13 +3755,13 @@ namespace kurisu {
         using namespace std::placeholders;
         m_acceptor->SetConnectionCallback(std::bind(&TcpServer::NewConnection, this, _1, _2));
     }
-    inline void TcpServer::start()
+    inline void TcpServer::Start()
     {
         if (!m_started)
         {
             m_started = true;
-            m_threadPool->start(m_threadInitCallback);
-            m_loop->run(std::bind(&detail::Acceptor::listen, m_acceptor.get()));
+            m_threadPool->Start(m_timingWheelInterval, m_threadInitCallback);
+            m_loop->Run(std::bind(&detail::Acceptor::Listen, m_acceptor.get()));
         }
     }
     inline TcpServer::~TcpServer()
@@ -3712,7 +3773,7 @@ namespace kurisu {
         {
             std::shared_ptr<TcpConnection> conn(item.second);
             item.second.reset();
-            conn->GetLoop()->run(std::bind(&TcpConnection::ConnectDestroyed, conn));
+            conn->GetLoop()->Run(std::bind(&TcpConnection::ConnectDestroyed, conn));
         }
     }
     inline void TcpServer::NewConnection(int sockfd, const SockAddr& peerAddr)
@@ -3736,7 +3797,8 @@ namespace kurisu {
         conn->SetWriteCompleteCallback(m_writeDoneCallback);
         //关闭回调函数,作用是将这个关闭的TcpConnection从map中删除
         conn->SetCloseCallback(std::bind(&TcpServer::RemoveConnection, this, std::placeholders::_1));
-        ioLoop->run(std::bind(&TcpConnection::ConnectEstablished, std::ref(conn)));
+        conn->SetTcpNoDelay(m_tcpNoDelay);
+        ioLoop->Run(std::bind(&TcpConnection::ConnectEstablished, std::ref(conn)));
     }
     inline void TcpServer::RemoveConnection(const std::shared_ptr<TcpConnection>& conn)
     {
@@ -3746,14 +3808,14 @@ namespace kurisu {
         //如果这个EventLoop对这个this指针做修改,就可能会导致TcpServer出错
         //所以理论上是不安全的,但其实并没有修改,而是立刻进入到TcpServer的EventLoop,所以其实是安全的
         //硬要说不安全,只有下面这一句话理论上不安全(其实也安全),其他全都是安全的
-        m_loop->run(std::bind(&TcpServer::RemoveConnectionInLoop, this, conn));
+        m_loop->Run(std::bind(&TcpServer::RemoveConnectionInLoop, this, conn));
     }
     inline void TcpServer::RemoveConnectionInLoop(const std::shared_ptr<TcpConnection>& conn)
     {
         m_loop->AssertInLoopThread();
 
-        LOG_INFO << "TcpServer::removeConnectionInLoop [" << m_name << "] - connection " << conn->name();
-        m_connections.erase(conn->name());
+        // LOG_INFO << "TcpServer::removeConnectionInLoop [" << m_name << "] - connection " << conn->name();
+        m_connections.erase(conn->Name());
 
         //不直接用m_loop->run是因为TcpConnection::ConnectDestroyed应该交给其对应的EventLoop执行
         conn->GetLoop()->AddExtraFunc(std::bind(&TcpConnection::ConnectDestroyed, conn));
@@ -3761,7 +3823,6 @@ namespace kurisu {
         //1.conn本身   2.上面bind了一个
         //所以离开这个函数后就只剩1,然后执行完TcpConnection::ConnectDestroyed,对应的TcpConnection才真正析构
     }
-
 
 
 }  // namespace kurisu

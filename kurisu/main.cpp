@@ -1,4 +1,3 @@
-// #include "all.hpp"
 // #include <iostream>
 // #include <chrono>
 // #include <vector>
@@ -10,42 +9,51 @@
 // #include <time.h>
 // #include <muduo/base/Timestamp.h>
 // #include <future>
+// #include <list>
+// #include <boost/circular_buffer.hpp>
+// #include <unordered_set>
+// #include <set>
 
 // std::mutex muMap;
 // std::map<uint64_t, uint64_t> map;
 
-// int* g;
-// std::vector<std::future<int>> vec;
-// int* p = new int;
+// const int LEN = 1000;
+// uint64_t g;
 
-// int Fn1()
-// {
-//     return 1;
-// }
+// class Entity : public std::enable_shared_from_this<Entity> {
+// public:
+//     void Func(const std::shared_ptr<Entity>& conn)
+//     {
+//         std::cout << conn.use_count() << std::endl;
+//     }
+// };
 
 
 // void Func()
 // {
 //     for (int i = 0; i < 10000; i++)
 //     {
+//         std::set<uint64_t> set;
+//         std::unordered_set<uint64_t> uset;
 //         auto start = std::chrono::system_clock::now().time_since_epoch().count();
-//         fmt::print("{}", i);
+//         for (int i = 0; i < 1000; i++)
+//             set.insert(i);
 //         auto end = std::chrono::system_clock::now().time_since_epoch().count();
 //         int64_t d = end - start;
 //         std::lock_guard locker(muMap);
-//         map[d]++;
+//         if (d < 30000)
+//             map[d]++;
+//         g = set.size();
 //     }
-//     for (auto&& item : vec)
-//         item.get();
 //     for (auto&& item : map)
 //         std::cout << item.first << ":" << item.second << std::endl;
+//     std::cout << "result=" << g << std::endl;
 // }
 
 
 
 // int main()
 // {
-//     vec.reserve(100000);
 //     Func();
 //     std::cout << "finish\n";
 // }
@@ -69,7 +77,6 @@
 
 
 #include "all.hpp"
-
 // kurisu::AsyncLogFile logger("hh", 100 * 1024 * 1024, 1);
 
 int main()
@@ -77,14 +84,29 @@ int main()
     kurisu::Logger::SetTimeZone(1);
     // kurisu::Logger::SetOutput([](const char* msg, uint64_t len) { logger.append(msg, len); });
     kurisu::EventLoop loop;
+
     kurisu::TcpServer serv(&loop, kurisu::SockAddr(5005), "serv");
-    serv.SetMessageCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp) {
-        conn->send(buf);
+    serv.SetConnectionCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn) {
+        if (conn->Connected())
+            conn->GetLoop()->AddToTimingWheel(conn);
     });
+    serv.SetMessageCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp) {
+        conn->Send(buf);
+        conn->GetLoop()->UpdateTimingWheel(conn);
+    });
+    serv.SetTimingWheel(5);
     serv.SetThreadNum(4);
-    serv.start();
-    loop.loop();
+    serv.Start();
+    loop.Loop();
 }
+
+
+
+
+
+
+
+
 
 
 
@@ -227,23 +249,73 @@ int main()
 
 
 
-// #include <muduo/net/TcpServer.h>
-// #include <muduo/net/EventLoop.h>
-// #include <muduo/base/Logging.h>
-// #include <muduo/net/EventLoopThreadPool.h>
-// #include <atomic>
-// using namespace muduo;
-// using namespace muduo::net;
+// // // #include <muduo/net/TcpServer.h>
+// // // #include <muduo/net/EventLoop.h>
+// // // #include <muduo/base/Logging.h>
+// // // #include <muduo/net/EventLoopThreadPool.h>
+// // // #include <atomic>
+// // // using namespace muduo;
+// // // using namespace muduo::net;
 
+
+// // // int main()
+// // // {
+// // //     EventLoop loop;
+// // //     TcpServer serv(&loop, InetAddress(5005), "serv");
+// // //     serv.setMessageCallback([](const TcpConnectionPtr& conn, Buffer* buf, Timestamp time) {
+// // //         conn->send(buf);
+// // //     });
+// // //     serv.setThreadNum(4);
+// // //     serv.start();
+// // //     loop.loop();
+// // // }
+
+
+
+// #include "all.hpp"
+// #include "boost/circular_buffer.hpp"
+// #include "CircularBuffer.hpp"
+
+// class Entity {
+// public:
+//     Entity() = default;
+//     Entity(const Entity&) { LOG_INFO << "COPY"; }
+//     Entity(Entity&&) { LOG_INFO << "MOVE"; }
+// };
+
+// void Func()
+// {
+//     CircularBuffer<int> buf(3);
+//     // auto p1 = std::make_shared<Entity>();
+//     // auto p2 = std::make_shared<Entity>();
+//     // auto p3 = std::make_shared<Entity>();
+//     // auto p4 = std::make_shared<Entity>();
+
+//     buf.push_back(1);
+//     buf.push_back(2);
+//     buf.push_back(3);
+//     // LOG_INFO << "p1=" << p1.use_count();
+//     // LOG_INFO << "p2=" << p2.use_count();
+//     // LOG_INFO << "p3=" << p3.use_count();
+//     // LOG_INFO << "p4=" << p4.use_count();
+//     for (int i = 0; i < 3; i++)
+//         LOG_WARN << buf.m_vec[i];
+//     LOG_INFO << "==========";
+//     buf.push_back(4);
+//     buf.push_back(5);
+//     buf.push_front(4);
+//     buf.push_front(4);
+//     buf.push_front(4);
+//     for (int i = 0; i < 3; i++)
+//         LOG_WARN << buf.m_vec[i];
+//     // LOG_INFO << "p1=" << p1.use_count();
+//     // LOG_INFO << "p2=" << p2.use_count();
+//     // LOG_INFO << "p3=" << p3.use_count();
+//     // LOG_INFO << "p4=" << p4.use_count();
+// }
 
 // int main()
 // {
-//     EventLoop loop;
-//     TcpServer serv(&loop, InetAddress(5005), "serv");
-//     serv.setMessageCallback([](const TcpConnectionPtr& conn, Buffer* buf, Timestamp time) {
-//         conn->send(buf);
-//     });
-//     serv.setThreadNum(4);
-//     serv.start();
-//     loop.loop();
+//     Func();
+//     LOG_INFO << "finish";
 // }

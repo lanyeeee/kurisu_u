@@ -82,7 +82,8 @@
         "future": "cpp",
         "cassert": "cpp",
         "filesystem": "cpp",
-        "any": "cpp"
+        "any": "cpp",
+        "unordered_set": "cpp"
     },
     "sqltools.connections": [
         {
