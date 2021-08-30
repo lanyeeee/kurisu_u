@@ -13,6 +13,7 @@
 // #include <boost/circular_buffer.hpp>
 // #include <unordered_set>
 // #include <set>
+// #include <forward_list>
 
 // std::mutex muMap;
 // std::map<uint64_t, uint64_t> map;
@@ -34,16 +35,26 @@
 //     for (int i = 0; i < 10000; i++)
 //     {
 //         std::set<uint64_t> set;
-//         std::unordered_set<uint64_t> uset;
-//         auto start = std::chrono::system_clock::now().time_since_epoch().count();
+//         std::vector<uint64_t> vec;
+//         vec.reserve(1000);
+//         std::list<uint64_t> list;
+//         std::forward_list<uint64_t> flist;
+//         std::deque<uint64_t> deq;
 //         for (int i = 0; i < 1000; i++)
-//             set.insert(i);
+//         {
+//             // set.insert(i);
+//             // vec.push_back(i);
+//             // list.push_back(i);
+//             // flist.push_front(i);
+//             deq.push_back(i);
+//         }
+//         auto start = std::chrono::system_clock::now().time_since_epoch().count();
+//         deq.erase(std::find(deq.begin(), deq.end(), 500));
 //         auto end = std::chrono::system_clock::now().time_since_epoch().count();
 //         int64_t d = end - start;
 //         std::lock_guard locker(muMap);
-//         if (d < 30000)
+//         if (d < 20000)
 //             map[d]++;
-//         g = set.size();
 //     }
 //     for (auto&& item : map)
 //         std::cout << item.first << ":" << item.second << std::endl;
@@ -54,7 +65,23 @@
 
 // int main()
 // {
-//     Func();
+//     // Func();
+//     std::vector<int> vec;
+//     vec.push_back(1);
+//     vec.push_back(2);
+//     vec.push_back(3);
+//     vec.push_back(4);
+//     vec.push_back(5);
+//     auto it = vec.rbegin();
+//     while (it != vec.rend())
+//     {
+//         if (*it == 3)
+//         {
+//             vec.erase((++it).base());
+//         }
+//         ++it;
+//     }
+
 //     std::cout << "finish\n";
 // }
 
@@ -79,6 +106,7 @@
 #include "all.hpp"
 // kurisu::AsyncLogFile logger("hh", 100 * 1024 * 1024, 1);
 
+
 int main()
 {
     kurisu::Logger::SetTimeZone(1);
@@ -88,13 +116,16 @@ int main()
     kurisu::TcpServer serv(&loop, kurisu::SockAddr(5005), "serv");
     serv.SetConnectionCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn) {
         if (conn->Connected())
-            conn->GetLoop()->AddToTimingWheel(conn);
+        {
+            conn->AddToShutdownTimingWheel(conn);
+        }
     });
     serv.SetMessageCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp) {
         conn->Send(buf);
-        conn->GetLoop()->UpdateTimingWheel(conn);
+        conn->UpdateShutdownTimingWheel(conn);
     });
-    serv.SetTimingWheel(5);
+    serv.SetHeartbeatInterval(3);
+    serv.SetShutdownInterval(7);
     serv.SetThreadNum(4);
     serv.Start();
     loop.Loop();
