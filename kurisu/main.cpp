@@ -1,88 +1,85 @@
 // #include <iostream>
-// #include <chrono>
-// #include <vector>
-// #include <memory>
-// #include <mutex>
-// #include <map>
-// #include <string.h>
-// #include <sys/time.h>
-// #include <time.h>
-// #include <muduo/base/Timestamp.h>
-// #include <future>
-// #include <list>
-// #include <boost/circular_buffer.hpp>
-// #include <unordered_set>
-// #include <set>
-// #include <forward_list>
-
-// std::mutex muMap;
-// std::map<uint64_t, uint64_t> map;
-
-// const int LEN = 1000;
-// uint64_t g;
-
-// class Entity : public std::enable_shared_from_this<Entity> {
-// public:
-//     void Func(const std::shared_ptr<Entity>& conn)
-//     {
-//         std::cout << conn.use_count() << std::endl;
-//     }
-// };
+// // #include <chrono>
+// // #include <vector>
+// // #include <memory>
+// // #include <mutex>
+// // #include <map>
+// // #include <string.h>
+// // #include <sys/time.h>
+// // #include <time.h>
+// // #include <muduo/base/Timestamp.h>
+// // #include <future>
+// // #include <list>
+// // #include <boost/circular_buffer.hpp>
+// // #include <unordered_set>
+// // #include <set>
+// // #include <forward_list>
+// #include "module/count_down_latch.hpp"
+// #include "module/exception.hpp"
+// #include "module/fixed_buffer.hpp"
+// #include "module/thread_data.h"
+// #include "module/this_thrd.h"
+// #include "module/timestamp.h"
+// // #include "all.hpp"
 
 
-// void Func()
-// {
-//     for (int i = 0; i < 10000; i++)
-//     {
-//         std::set<uint64_t> set;
-//         std::vector<uint64_t> vec;
-//         vec.reserve(1000);
-//         std::list<uint64_t> list;
-//         std::forward_list<uint64_t> flist;
-//         std::deque<uint64_t> deq;
-//         for (int i = 0; i < 1000; i++)
-//         {
-//             // set.insert(i);
-//             // vec.push_back(i);
-//             // list.push_back(i);
-//             // flist.push_front(i);
-//             deq.push_back(i);
-//         }
-//         auto start = std::chrono::system_clock::now().time_since_epoch().count();
-//         deq.erase(std::find(deq.begin(), deq.end(), 500));
-//         auto end = std::chrono::system_clock::now().time_since_epoch().count();
-//         int64_t d = end - start;
-//         std::lock_guard locker(muMap);
-//         if (d < 20000)
-//             map[d]++;
-//     }
-//     for (auto&& item : map)
-//         std::cout << item.first << ":" << item.second << std::endl;
-//     std::cout << "result=" << g << std::endl;
-// }
+
+// // std::mutex muMap;
+// // std::map<uint64_t, uint64_t> map;
+
+// // const int LEN = 1000;
+// // uint64_t g;
+
+// // class Entity : public std::enable_shared_from_this<Entity> {
+// // public:
+// //     void Func(const std::shared_ptr<Entity>& conn)
+// //     {
+// //         std::cout << conn.use_count() << std::endl;
+// //     }
+// // };
+
+
+// // void Func()
+// // {
+// //     for (int i = 0; i < 10000; i++)
+// //     {
+// //         std::set<uint64_t> set;
+// //         std::vector<uint64_t> vec;
+// //         vec.reserve(1000);
+// //         std::list<uint64_t> list;
+// //         std::forward_list<uint64_t> flist;
+// //         std::deque<uint64_t> deq;
+// //         for (int i = 0; i < 1000; i++)
+// //         {
+// //             // set.insert(i);
+// //             // vec.push_back(i);
+// //             // list.push_back(i);
+// //             // flist.push_front(i);
+// //             deq.push_back(i);
+// //         }
+// //         auto start = std::chrono::system_clock::now().time_since_epoch().count();
+// //         deq.erase(std::find(deq.begin(), deq.end(), 500));
+// //         auto end = std::chrono::system_clock::now().time_since_epoch().count();
+// //         int64_t d = end - start;
+// //         std::lock_guard locker(muMap);
+// //         if (d < 20000)
+// //             map[d]++;
+// //     }
+// //     for (auto&& item : map)
+// //         std::cout << item.first << ":" << item.second << std::endl;
+// //     std::cout << "result=" << g << std::endl;
+// // }
 
 
 
 // int main()
 // {
 //     // Func();
-//     std::vector<int> vec;
-//     vec.push_back(1);
-//     vec.push_back(2);
-//     vec.push_back(3);
-//     vec.push_back(4);
-//     vec.push_back(5);
-//     auto it = vec.rbegin();
-//     while (it != vec.rend())
-//     {
-//         if (*it == 3)
-//         {
-//             vec.erase((++it).base());
-//         }
-//         ++it;
-//     }
-
-//     std::cout << "finish\n";
+//     kurisu::Timestamp start;
+//     kurisu::Timestamp end;
+//     std::cout << end.NsSinceEpoch() - start.NsSinceEpoch() << "\n";
+//     std::cout << "Tid=" << kurisu::this_thrd::Tid() << "\n";
+//     std::cout << "hello world\n";
 // }
 
 
@@ -99,18 +96,36 @@
 
 
 
+// #include <iostream>
+// #include "kurisu.h"
+// int Fn(int n)
+// {
+//     return n <= 2 ? 1 : Fn(n - 1) + Fn(n - 2);
+// }
+
+// int main()
+// {
+// }
+
+// #include "all.hpp"
 
 
 
 
-#include "all.hpp"
-// kurisu::AsyncLogFile logger("hh", 100 * 1024 * 1024, 1);
+
+
+
+
+
+// #include "all.hpp"
+#include "include/kurisu.h"
+kurisu::AsyncLogFile logger("hh", 100 * 1024 * 1024, 1);
 
 
 int main()
 {
     kurisu::Logger::SetTimeZone(1);
-    // kurisu::Logger::SetOutput([](const char* msg, uint64_t len) { logger.append(msg, len); });
+    kurisu::Logger::SetOutput([](const char* msg, uint64_t len) { logger.Append(msg, len); });
     kurisu::EventLoop loop;
 
     kurisu::TcpServer serv(&loop, kurisu::SockAddr(5005), "serv");
