@@ -117,30 +117,30 @@
 
 
 
-// #include "all.hpp"
-#include "include/kurisu.h"
-kurisu::AsyncLogFile logger("hh", 100 * 1024 * 1024, 1);
+//#include "kurisu.hpp"
+#include <kurisu.h>
+// kurisu::AsyncLogFile logger("hh", 100 * 1024 * 1024, 1);
 
 
 int main()
 {
     kurisu::Logger::SetTimeZone(1);
-    kurisu::Logger::SetOutput([](const char* msg, uint64_t len) { logger.Append(msg, len); });
+    // kurisu::Logger::SetOutput([](const char* msg, uint64_t len) { logger.Append(msg, len); });
     kurisu::EventLoop loop;
 
     kurisu::TcpServer serv(&loop, kurisu::SockAddr(5005), "serv");
     serv.SetConnectionCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn) {
-        if (conn->Connected())
-        {
-            conn->AddToShutdownTimingWheel(conn);
-        }
+        // if (conn->Connected())
+        // {
+        //     conn->AddToShutdownTimingWheel(conn);
+        // }
     });
     serv.SetMessageCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp) {
         conn->Send(buf);
-        conn->UpdateShutdownTimingWheel(conn);
+        // conn->UpdateShutdownTimingWheel(conn);
     });
-    serv.SetHeartbeatInterval(3);
-    serv.SetShutdownInterval(7);
+    // serv.SetHeartbeatInterval(3);
+    // serv.SetShutdownInterval(7);
     serv.SetThreadNum(4);
     serv.Start();
     loop.Loop();

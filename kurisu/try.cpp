@@ -1,1 +1,1 @@
-#include "all.hpp"
+#include "kurisu.hpp"
