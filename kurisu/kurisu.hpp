@@ -3472,7 +3472,7 @@ namespace kurisu {
         if (m_readIndex < len)
             LOG_FATAL << "in Buffer::prepend   lack of PrependableBytes";
         m_readIndex -= len;
-        memcmp(ReadIndex(), (const char*)data, len);
+        memcpy((char*)ReadIndex(), (const char*)data, len);
     }
     inline void Buffer::Shrink(uint64_t reserve)
     {

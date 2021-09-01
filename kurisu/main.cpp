@@ -117,14 +117,17 @@
 
 
 
-//#include "kurisu.hpp"
-#include <kurisu.h>
+#include "kurisu.hpp"
+//#include<kurisu.h>
 // kurisu::AsyncLogFile logger("hh", 100 * 1024 * 1024, 1);
 
 
 int main()
 {
     kurisu::Logger::SetTimeZone(1);
+    kurisu::Buffer buf;
+    buf.PrependInt32(4);
+    LOG_INFO << buf.ReadInt32();
     // kurisu::Logger::SetOutput([](const char* msg, uint64_t len) { logger.Append(msg, len); });
     kurisu::EventLoop loop;
 
