@@ -1,8 +1,6 @@
 #pragma once
 #include <string>
 #include <string_view>
-#include <boost/operators.hpp>
-#include <boost/circular_buffer.hpp>
 #include <fmt/chrono.h>
 #include <fmt/compile.h>
 #include <chrono>
@@ -41,7 +39,7 @@ namespace kurisu {
         };
     }  // namespace detail
 
-    class Timestamp : detail::copyable, boost::totally_ordered<Timestamp> {
+    class Timestamp : detail::copyable {
     public:
         Timestamp() : m_stamp(std::chrono::system_clock::now()) {}
         explicit Timestamp(std::chrono::system_clock::time_point stamp) : m_stamp(stamp) {}
@@ -61,6 +59,10 @@ namespace kurisu {
         time_t As_time_t() { return (time_t)Sec(); }
 
         bool operator<(const Timestamp& other) const { return this->GetStamp() < other.GetStamp(); }
+        bool operator<=(const Timestamp& other) const { return this->GetStamp() <= other.GetStamp(); }
+        bool operator>(const Timestamp& other) const { return this->GetStamp() > other.GetStamp(); }
+        bool operator>=(const Timestamp& other) const { return this->GetStamp() >= other.GetStamp(); }
+        bool operator!=(const Timestamp& other) const { return this->GetStamp() != other.GetStamp(); }
         bool operator==(const Timestamp& other) const { return this->GetStamp() == other.GetStamp(); }
 
         static Timestamp Now() { return Timestamp(); }
@@ -1352,9 +1354,13 @@ namespace kurisu {
 
         public:
             //second
-            ShutDownTimingWheel(EventLoop* loop, int interval) : m_buckets(interval)
+            ShutDownTimingWheel(EventLoop* loop, int interval)
             {
-                loop->RunEvery(1.0, [this] { m_buckets.push_back(Bucket()); });
+                loop->RunEvery(1.0, [this, interval] {
+                    m_buckets.push_back(Bucket());
+                    if (m_buckets.size() > (uint64_t)interval)
+                        m_buckets.pop_front();
+                });
             }
             void PushAndSetAny(const std::shared_ptr<TcpConnection>& conn)
             {
@@ -1371,7 +1377,7 @@ namespace kurisu {
 
         private:
             using Bucket = std::set<std::shared_ptr<Entry>>;
-            boost::circular_buffer<Bucket> m_buckets;
+            std::deque<Bucket> m_buckets;
         };
 
         class HeartbeatTimingWheel {
@@ -1405,7 +1411,7 @@ namespace kurisu {
             void OnTimer()
             {
                 Bucket& list = m_buckets[m_index++];
-                // LOG_INFO << m_index - 1 << ":" << list.size();
+                // LOG_INFO << "Heartbeat:" << m_index - 1 << ":" << list.size();
                 if (m_index >= (int)m_buckets.size())
                     m_index = 0;
                 auto it = list.rbegin();  //从后往前遍历,减少删除时的拷贝
