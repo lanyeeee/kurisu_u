@@ -2,7 +2,6 @@
 ## Requires:  
 
   GCC >= 7.1(supports C++17 or above)  
-  Boost (boost/operators.hpp, boost/circular_buffer.hpp)  
   [fmt](https://github.com/fmtlib/fmt)(format the log)  
 &nbsp;
 ## Before using it you should:  
@@ -15,9 +14,9 @@ $ gcc --version
 ### 2. Install required packages
 ```
 Ubuntu:  
-$ sudo apt install cmake make libboost-dev  
+$ sudo apt install cmake make
 CentOS:  
-$ sudo yum install cmake make boost-devel  
+$ sudo yum install cmake make
 ```
 ### 3. Build fmt
 ```
