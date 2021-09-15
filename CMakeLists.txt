@@ -22,5 +22,5 @@ install(
         )
 
 install(
-    DIRECTORY include DESTINATION build/include
+    DIRECTORY include/ DESTINATION include
     )
