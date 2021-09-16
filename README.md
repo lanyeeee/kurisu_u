@@ -7,7 +7,7 @@
 ## Before using it you should:  
 ### 1. Make sure the version of g++  and gcc >= 7.1
 ```
-Check the version:
+Check the g++/gcc version:
 $ g++ --version
 $ gcc --version
 ```
@@ -17,23 +17,15 @@ Ubuntu:
 $ sudo apt install cmake make
 CentOS:  
 $ sudo yum install cmake make
-```
-### 3. Build fmt
-```
-$ sh build-fmt.sh
-```
+```    
+
 &nbsp;
-## How to use in your project:
-### The easiest way is:  
+## Build
+### build with `cmake`
+make sure you are in root directory `kurisu_u`
 ```
-#include "kurisu.hpp"
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+sudo make install
 ```
-Yes, it can be a header-only library
-### Or you can build the `static lib`:
-```
-$ sh build-kurisu.sh 
-```
-This will create a folder named `build` in the `kurisu_u` directory  
-Then you should move the `include` and `lib` in the `build` folder to where they should be  
-Finally:  
-`#include <kurisu.h>`

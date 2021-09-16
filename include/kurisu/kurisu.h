@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <string.h>
 #include <string_view>
 #include <chrono>
 #include <functional>
@@ -7,16 +8,13 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
-#include <deque>
 #include <arpa/inet.h>
-#include <netinet/tcp.h>  //tcp_info
 #include <sys/epoll.h>
+#include <deque>
 #include <map>
 #include <set>
 #include <any>
 
-#include <fmt/chrono.h>
-#include <fmt/compile.h>
 
 uint64_t htonll(uint64_t val);
 uint64_t ntohll(uint64_t val);
@@ -51,9 +49,8 @@ namespace kurisu {
         char* GmLogFormat(char* buf) const;
         char* LocalLogFormat(char* buf) const;
         //format gmtime
-        std::string GmFormatString() const { return fmt::format(FMT_COMPILE("{:%F %T}"), fmt::gmtime(m_stamp)); }
-        //format localtime
-        std::string LocalFormatString() const { return fmt::format(FMT_COMPILE("{:%F %T}"), fmt::localtime(m_stamp)); }
+        std::string GmFormatString() const;
+        std::string LocalFormatString() const;
         int64_t Usec() const;
         int64_t Nsec() const;
         int64_t Sec() const;
@@ -118,6 +115,19 @@ namespace kurisu {
 
         private:
             const char* m_str;
+        };
+
+        class KnownLengthString : copyable {
+        public:
+            KnownLengthString(const char* str, uint64_t len) : m_buf(str), m_size(len) {}
+            KnownLengthString& operator=(const KnownLengthString& other)
+            {
+                m_buf = other.m_buf;
+                m_size = other.m_size;
+                return *this;
+            }
+            const char* m_buf;
+            uint64_t m_size;
         };
 
         class FixedString : copyable {
@@ -383,6 +393,7 @@ namespace kurisu {
             LogStream& operator<<(const std::string_view& str);
             LogStream& operator<<(const FixedBuf& buf);
             LogStream& operator<<(const FixedString& str);
+            LogStream& operator<<(const detail::KnownLengthString& str);
 
         private:
             template <class T>
@@ -1162,6 +1173,7 @@ namespace kurisu {
 
         bool IsComplete(Buffer* buf)
         {
+        again:
             //length
             if (auto readable = buf->ReadableBytes(); readable >= (uint64_t)(m_lengthFieldLength + m_lengthFieldOffset))
             {
@@ -1184,14 +1196,13 @@ namespace kurisu {
                     buf->Discard(m_lengthFieldOffset + m_lengthFieldLength + bodyLen);
                     LOG_WARN << "msg body has " << bodyLen << " bytes,exceeds the maxFrameLength(" << m_maxFrameLength << ") you set,so the whole msg(" << m_lengthFieldOffset + m_lengthFieldLength + bodyLen << ") has been discarded";
                     buf->Shrink(m_maxFrameLength);
-                    return false;
+                    goto again;
                 }
                 else
                     return true;
             }
             return false;
         }
-
         Buffer Decode(Buffer* buf)
         {
             uint64_t bodyLen = 0;
@@ -1237,7 +1248,7 @@ namespace kurisu {
         //是否已断开连接
         bool Disconnected() const { return m_status == k_Disconnected; }
         // return true if success.
-        bool GetTcpInfo(struct tcp_info* tcpi) const { return m_socket->GetTcpInfo(tcpi); }
+        bool GetTcpInfo(struct tcp_info* tcpi) const;
         std::string GetTcpInfoString() const;
 
         void Send(std::string&& msg);  // C++11
