@@ -14,8 +14,9 @@
 #include <map>
 #include <set>
 #include <any>
-#include "fmt/chrono.h"
-#include "fmt/compile.h"
+
+#include <fmt/chrono.h>
+#include <fmt/compile.h>
 
 uint64_t htonll(uint64_t val);
 uint64_t ntohll(uint64_t val);
@@ -162,8 +163,8 @@ namespace kurisu {
 
         void ThrdEntrance(std::shared_ptr<ThreadData> thrdData);
 
-        const uint64_t k_SmallBuf = 4'000;
-        const uint64_t k_LargeBuf = 4'000'000;
+        constexpr uint64_t k_SmallBuf = 4'000;
+        constexpr uint64_t k_LargeBuf = 4'000'000;
 
         template <uint64_t SIZE>
         class FixedBuffer : uncopyable {
@@ -1084,13 +1085,13 @@ namespace kurisu {
         const char* FindEOL() const { return (const char*)memchr(ReadIndex(), '\n', ReadableBytes()); }
         const char* FindEOL(const char* start) const { return (const char*)memchr(start, '\n', WriteIndex() - start); }
 
-        void Drop(uint64_t len);
-        void DropUntil(const char* end) { Drop(end - ReadIndex()); }
-        void DropInt64() { Drop(sizeof(int64_t)); }
-        void DropInt32() { Drop(sizeof(int)); }
-        void DropInt16() { Drop(sizeof(int16_t)); }
-        void DropInt8() { Drop(sizeof(int8_t)); }
-        void DropAll() { m_readIndex = m_writeIndex = k_PrependSize; }
+        void Discard(uint64_t len);
+        void DiscardUntil(const char* end) { Discard(end - ReadIndex()); }
+        void DiscardInt64() { Discard(sizeof(int64_t)); }
+        void DiscardInt32() { Discard(sizeof(int)); }
+        void DiscardInt16() { Discard(sizeof(int16_t)); }
+        void DiscardInt8() { Discard(sizeof(int8_t)); }
+        void DiscardAll() { m_readIndex = m_writeIndex = k_PrependSize; }
 
         std::string RetrieveAllAsString() { return RetrieveAsString(ReadableBytes()); }
         std::string RetrieveAsString(uint64_t len);
@@ -1130,6 +1131,8 @@ namespace kurisu {
         uint64_t Capacity() const { return m_buf->len; }
 
         ssize_t ReadSocket(int fd, int* savedErrno);
+        void ReadIndexRightShift(uint64_t len) { m_readIndex += len; }
+        void ReadIndexLeftShift(uint64_t len) { m_readIndex -= len; }
 
     private:
         void Prepend(const void* data, uint64_t len);
@@ -1139,8 +1142,6 @@ namespace kurisu {
         char* Begin() { return (char*)m_buf->ptr; }
         const char* Begin() const { return (const char*)m_buf->ptr; }
         void MakeSpace(uint64_t len);
-        ssize_t Read(int fd, int* savedErrno);
-        ssize_t Readv(int fd, int* savedErrno);
 
     private:
         uint64_t m_readIndex;   //从这里开始读
@@ -1148,6 +1149,75 @@ namespace kurisu {
         std::unique_ptr<Buf> m_buf;
 
         static const char k_CRLF[];
+    };
+
+    class LengthDecoder : detail::copyable {
+    public:
+        LengthDecoder() = default;
+        LengthDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int initialBytesToStrip)
+            : m_maxFrameLength(maxFrameLength),
+              m_lengthFieldOffset(lengthFieldOffset),
+              m_lengthFieldLength(lengthFieldLength),
+              m_initialBytesToStrip(initialBytesToStrip) {}
+
+        bool IsComplete(Buffer* buf)
+        {
+            //length
+            if (auto readable = buf->ReadableBytes(); readable >= (uint64_t)(m_lengthFieldLength + m_lengthFieldOffset))
+            {
+                uint64_t bodyLen = 0;
+                buf->ReadIndexRightShift(m_lengthFieldOffset);
+                switch (m_lengthFieldLength)
+                {
+                    case 1: bodyLen = buf->PeekInt8(); break;
+                    case 2: bodyLen = buf->PeekInt16(); break;
+                    case 4: bodyLen = buf->PeekInt32(); break;
+                    case 8: bodyLen = buf->PeekInt64(); break;
+                }
+                buf->ReadIndexLeftShift(m_lengthFieldOffset);
+
+                //body
+                if (readable - m_lengthFieldLength - m_lengthFieldOffset < bodyLen)
+                    return false;
+                else if (bodyLen > (uint64_t)m_maxFrameLength)  //太长了
+                {
+                    buf->Discard(m_lengthFieldOffset + m_lengthFieldLength + bodyLen);
+                    LOG_WARN << "msg body has " << bodyLen << " bytes,exceeds the maxFrameLength(" << m_maxFrameLength << ") you set,so the whole msg(" << m_lengthFieldOffset + m_lengthFieldLength + bodyLen << ") has been discarded";
+                    buf->Shrink(m_maxFrameLength);
+                    return false;
+                }
+                else
+                    return true;
+            }
+            return false;
+        }
+
+        Buffer Decode(Buffer* buf)
+        {
+            uint64_t bodyLen = 0;
+            buf->ReadIndexRightShift(m_lengthFieldOffset);
+            switch (m_lengthFieldLength)
+            {
+                case 1: bodyLen = buf->PeekInt8(); break;
+                case 2: bodyLen = buf->PeekInt16(); break;
+                case 4: bodyLen = buf->PeekInt32(); break;
+                case 8: bodyLen = buf->PeekInt64(); break;
+            }
+            buf->ReadIndexLeftShift(m_lengthFieldOffset);
+
+            Buffer res(m_lengthFieldOffset + m_lengthFieldLength - m_initialBytesToStrip + bodyLen);
+            buf->Discard(m_initialBytesToStrip);
+            res.Append(buf->ReadIndex(), res.Size());
+            buf->Discard(res.Size());
+            return res;
+        }
+
+    private:
+        int m_maxFrameLength = 65535;
+        int m_lengthFieldOffset = 0;
+        int m_lengthFieldLength = 0;
+        int m_initialBytesToStrip = 0;
+        friend TcpConnection;
     };
 
     class TcpConnection : detail::uncopyable, public std::enable_shared_from_this<TcpConnection> {
@@ -1198,12 +1268,6 @@ namespace kurisu {
         {
             m_writeDoneCallback = callback;
         }
-        //应用层缓冲区堆积的数据大于m_highWaterMark时调用
-        void SetHighWaterMarkCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, uint64_t)>& callback, uint64_t highWaterMark)
-        {
-            m_highWaterMarkCallback = callback;
-            m_highWaterMark = highWaterMark;
-        }
 
         Buffer* GetInputBuffer() { return &m_inputBuf; }
         Buffer* GetOutputBuffer() { return &m_outputBuf; }
@@ -1223,10 +1287,12 @@ namespace kurisu {
         const std::any& GetAny() const { return m_any; }
         std::any& GetAny() { return m_any; }
 
-        void AddToShutdownTimingWheel(const std::shared_ptr<kurisu::TcpConnection>& conn);
-        void UpdateShutdownTimingWheel(const std::shared_ptr<kurisu::TcpConnection>& conn);
+        void AddToShutdownTimingWheel();
+
+        void SetLengthDecoder(LengthDecoder* decoder) { m_decoder = *decoder; }
 
     private:
+        void UpdateShutdownTimingWheel();
         void HandleRead(Timestamp receiveTime);
         void HandleWrite();
         void HandleClose();
@@ -1245,25 +1311,24 @@ namespace kurisu {
         static const int k_Connected = 2;
         static const int k_Disconnecting = 3;
 
-        EventLoop* m_loop;         //所属的EventLoop
-        uint64_t m_highWaterMark;  //应用层缓冲区堆积的数据大于这个数(byte)就回调m_highWaterMarkCallback
-        const std::string m_name;  //名称
-        std::atomic_int m_status;  //连接的状态
-        bool m_reading;            //是否正在read
+        bool m_reading;                        //是否正在read
+        bool m_inShutdownTimingWheel = false;  //是否已在ShutdownTimingWheel中
+        std::atomic_int m_status;              //连接的状态
+        EventLoop* m_loop;                     //所属的EventLoop
         std::unique_ptr<detail::Socket> m_socket;
         std::unique_ptr<detail::Channel> m_channel;
+        LengthDecoder m_decoder;
+        Buffer m_inputBuf;
+        Buffer m_outputBuf;
         std::any m_any;
         const SockAddr m_localAddr;  //本地地址
         const SockAddr m_peerAddr;   //对端地址
+        const std::string m_name;    //名称
         std::function<void(const std::shared_ptr<TcpConnection>&)> m_connCallback;
         std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)> m_msgCallback;
         std::function<void(const std::shared_ptr<TcpConnection>&)> m_writeDoneCallback;
-        std::function<void(const std::shared_ptr<TcpConnection>&, uint64_t)> m_highWaterMarkCallback;
         std::function<void(const std::shared_ptr<TcpConnection>&)> m_closeCallback;
-        Buffer m_inputBuf;
-        Buffer m_outputBuf;
     };
-
 
     class TcpServer : detail::uncopyable {
     public:
@@ -1308,6 +1373,8 @@ namespace kurisu {
         void SetHeartbeatInterval(int interval) { m_heartbeatInterval = interval; }
         void SetHeartbeatMsg(const void* data, int len);
 
+        void SetLengthDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int initialBytesToStrip);
+
     private:
         using ConnectionMap = std::map<std::string, std::shared_ptr<TcpConnection>>;
         //连接到来时会回调的函数
@@ -1326,6 +1393,7 @@ namespace kurisu {
         std::unique_ptr<detail::Acceptor> m_acceptor;
         EventLoop* m_loop;  // TcpServer所属的EventLoop
         std::shared_ptr<detail::EventLoopThreadPool> m_threadPool;
+        LengthDecoder m_decoder;
         const std::string m_ipPort;
         const std::string m_name;
         std::function<void(const std::shared_ptr<TcpConnection>&)> m_connCallback;                     //连接到来执行的回调函数
@@ -1345,7 +1413,7 @@ namespace kurisu {
                 ~Entry()
                 {
                     if (auto conn = m_weak.lock(); conn)
-                        conn->Shutdown();  //TODO  是否有必要ForceClose?
+                        conn->Shutdown();
                 }
 
             private:

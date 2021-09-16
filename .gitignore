@@ -32,3 +32,4 @@
 *.app
 
 /kurisu/client.cpp
+/build
