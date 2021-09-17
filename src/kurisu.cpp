@@ -2404,8 +2404,8 @@ namespace kurisu {
                     //不再监听写事件
                     m_channel->OffWriting();
                     //如果设置了写完的回调函数就进行回调
-                    if (m_writeDoneCallback)
-                        m_loop->AddExtraFunc(std::bind(m_writeDoneCallback, shared_from_this()));
+                    if (m_writeCompleteCallback)
+                        m_loop->AddExtraFunc(std::bind(m_writeCompleteCallback, shared_from_this()));
                     if (m_status == k_Disconnecting)
                         ShutdownInLoop();
                 }
@@ -2463,8 +2463,8 @@ namespace kurisu {
             if (n >= 0)
             {
                 remain = len - n;
-                if (m_writeDoneCallback && remain == 0)  //写完且有回调要执行
-                    m_loop->AddExtraFunc(std::bind(m_writeDoneCallback, shared_from_this()));
+                if (m_writeCompleteCallback && remain == 0)  //写完且有回调要执行
+                    m_loop->AddExtraFunc(std::bind(m_writeCompleteCallback, shared_from_this()));
             }
             else  //出错,一点也写不进
             {
@@ -2600,7 +2600,7 @@ namespace kurisu {
         //TcpServer将所有回调函数都传给新的TcpConnection
         conn->SetConnectionCallback(m_connCallback);
         conn->SetMessageCallback(m_msgCallback);
-        conn->SetWriteCompleteCallback(m_writeDoneCallback);
+        conn->SetWriteCompleteCallback(m_writeCompleteCallback);
         //关闭回调函数,作用是将这个关闭的TcpConnection从map中删除
         conn->SetCloseCallback(std::bind(&TcpServer::RemoveConnection, this, std::placeholders::_1));
         conn->SetTcpNoDelay(m_tcpNoDelay);
@@ -2633,9 +2633,12 @@ namespace kurisu {
         //所以离开这个函数后就只剩1,然后执行完TcpConnection::ConnectDestroyed,对应的TcpConnection才真正析构
     }
     void TcpServer::SetHeartbeatMsg(const void* data, int len) { detail::HeartbeatTimingWheel::Msg::SetMsg(data, len); }
-    void TcpServer::SetLengthDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int initialBytesToStrip)
+    void TcpServer::SetLengthDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
     {
-        m_decoder = LengthDecoder(maxFrameLength, lengthFieldOffset, lengthFieldLength, initialBytesToStrip);
+        int len = lengthFieldLength;
+        if (len != 1 && len != 2 && len != 4 && len != 8)
+            LOG_FATAL << "TcpServer::SetLengthDecoder lengthFieldLength only supports 1/2/4/8";
+        m_decoder = LengthDecoder(maxFrameLength, lengthFieldOffset, lengthFieldLength, lengthAdjustment, initialBytesToStrip);
     }
 
 }  // namespace kurisu

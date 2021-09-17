@@ -1165,10 +1165,11 @@ namespace kurisu {
     class LengthDecoder : detail::copyable {
     public:
         LengthDecoder() = default;
-        LengthDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int initialBytesToStrip)
+        LengthDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
             : m_maxFrameLength(maxFrameLength),
               m_lengthFieldOffset(lengthFieldOffset),
               m_lengthFieldLength(lengthFieldLength),
+              m_lengthAdjustment(lengthAdjustment),
               m_initialBytesToStrip(initialBytesToStrip) {}
 
         bool IsComplete(Buffer* buf)
@@ -1188,13 +1189,15 @@ namespace kurisu {
                 }
                 buf->ReadIndexLeftShift(m_lengthFieldOffset);
 
+                uint64_t msgLen = m_lengthFieldOffset + m_lengthFieldLength + m_lengthAdjustment + bodyLen;
+
                 //body
                 if (readable - m_lengthFieldLength - m_lengthFieldOffset < bodyLen)
                     return false;
-                else if (bodyLen > (uint64_t)m_maxFrameLength)  //太长了
+                else if (msgLen > m_maxFrameLength)  //太长了
                 {
-                    buf->Discard(m_lengthFieldOffset + m_lengthFieldLength + bodyLen);
-                    LOG_WARN << "msg body has " << bodyLen << " bytes,exceeds the maxFrameLength(" << m_maxFrameLength << ") you set,so the whole msg(" << m_lengthFieldOffset + m_lengthFieldLength + bodyLen << ") has been discarded";
+                    buf->Discard(msgLen);
+                    LOG_WARN << "msg was " << msgLen << " bytes,exceeds the maxFrameLength(" << m_maxFrameLength << ") you set,so the whole msg has been discarded";
                     buf->Shrink(m_maxFrameLength);
                     goto again;
                 }
@@ -1203,6 +1206,7 @@ namespace kurisu {
             }
             return false;
         }
+
         Buffer Decode(Buffer* buf)
         {
             uint64_t bodyLen = 0;
@@ -1227,6 +1231,7 @@ namespace kurisu {
         int m_maxFrameLength = 65535;
         int m_lengthFieldOffset = 0;
         int m_lengthFieldLength = 0;
+        int m_lengthAdjustment = 0;
         int m_initialBytesToStrip = 0;
         friend TcpConnection;
     };
@@ -1277,7 +1282,7 @@ namespace kurisu {
         //写操作完成时会调用这个回调函数
         void SetWriteCompleteCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
         {
-            m_writeDoneCallback = callback;
+            m_writeCompleteCallback = callback;
         }
 
         Buffer* GetInputBuffer() { return &m_inputBuf; }
@@ -1337,7 +1342,7 @@ namespace kurisu {
         const std::string m_name;    //名称
         std::function<void(const std::shared_ptr<TcpConnection>&)> m_connCallback;
         std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)> m_msgCallback;
-        std::function<void(const std::shared_ptr<TcpConnection>&)> m_writeDoneCallback;
+        std::function<void(const std::shared_ptr<TcpConnection>&)> m_writeCompleteCallback;
         std::function<void(const std::shared_ptr<TcpConnection>&)> m_closeCallback;
     };
 
@@ -1354,37 +1359,47 @@ namespace kurisu {
         const std::string& ipPort() const { return m_ipPort; }
         const std::string& Name() const { return m_name; }
         EventLoop* GetLoop() const { return m_loop; }
-        //必须在start之前调用
+        //must be called before Start
         void SetThreadNum(int num) { m_threadPool->SetThreadNum(num); }
-        //必须在start之前调用
+        //must be called before Start
         void SetThreadInitCallback(const std::function<void(EventLoop*)>& callback) { m_threadInitCallback = callback; }
+        //must be called before Start
         void SetTcpNoDelay(bool on) { m_tcpNoDelay = on; }
-        // 必须在start之后调用
+        //must be called before Start
+        void SetShutdownInterval(int interval) { m_shutdownInterval = interval; }
+        //must be called before Start
+        void SetHeartbeatInterval(int interval) { m_heartbeatInterval = interval; }
+        //must be called before Start
+        void SetHeartbeatMsg(const void* data, int len);
+
+        //must be called before Start
+        //lengthFieldLength only supports 1/2/4/8
+        void SetLengthDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip);
+
+        // must be called after Start
         std::shared_ptr<detail::EventLoopThreadPool> GetThreadPool() { return m_threadPool; }
 
-        //启动,线程安全
+        //start,thread safe
         void Start();
-        //连接到来或连接关闭时回调的函数,线程不安全
+        //must be called before Start
+        //set the callback when connection active
         void SetConnectionCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
         {
             m_connCallback = callback;
         }
-        //消息到来时回调的函数,线程不安全
+        //must be called before Start
+        //set the callback when msg arrive
         void SetMessageCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)>& callback)
         {
             m_msgCallback = callback;
         }
-        //write完成时会回调的函数,线程不安全
-        void SetWriteDoneCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
+        //must be called before Start
+        //set the callback when all msg write complete
+        void SetWriteCompleteCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
         {
-            m_writeDoneCallback = callback;
+            m_writeCompleteCallback = callback;
         }
 
-        void SetShutdownInterval(int interval) { m_shutdownInterval = interval; }
-        void SetHeartbeatInterval(int interval) { m_heartbeatInterval = interval; }
-        void SetHeartbeatMsg(const void* data, int len);
-
-        void SetLengthDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int initialBytesToStrip);
 
     private:
         using ConnectionMap = std::map<std::string, std::shared_ptr<TcpConnection>>;
@@ -1409,7 +1424,7 @@ namespace kurisu {
         const std::string m_name;
         std::function<void(const std::shared_ptr<TcpConnection>&)> m_connCallback;                     //连接到来执行的回调函数
         std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)> m_msgCallback;  //消息到来执行的回调函数
-        std::function<void(const std::shared_ptr<TcpConnection>&)> m_writeDoneCallback;                //写操作完成时执行的回调函数
+        std::function<void(const std::shared_ptr<TcpConnection>&)> m_writeCompleteCallback;            //写操作完成时执行的回调函数
         std::function<void(EventLoop*)> m_threadInitCallback;
         ConnectionMap m_connections;
     };
