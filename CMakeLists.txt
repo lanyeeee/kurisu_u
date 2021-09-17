@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.0.0)
 project(kurisu)
 
 set(CMAKE_BUILD_TYPE "Release")
-SET(LIBRARY_OUTPUT_PATH ./build/lib)
+set(LIBRARY_OUTPUT_PATH ./build/lib)
 set(CMAKE_CXX_FLAGS "-pthread -std=gnu++17 -O3")
 
 #向工程添加多个特定的头文件搜索路径,路径之间用空格分隔
