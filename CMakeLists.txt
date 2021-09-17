@@ -16,7 +16,7 @@ add_subdirectory(src/fmt)
 
 
 install(
-        TARGETS kurisu
+        TARGETS
         ARCHIVE DESTINATION lib
         PUBLIC_HEADER DESTINATION include
         )
