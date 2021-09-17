@@ -1,4 +1,5 @@
 # kurisu
+
 ## Requires:  
 
   GCC >= 7.1(supports C++17 or above)  
@@ -32,7 +33,7 @@ $ sudo make install
 ## Example
 1.The simplest echo server
 ### `example.cpp`
-```
+```cpp
 #include <kurisu/kurisu.h>
 
 int main()
@@ -60,7 +61,7 @@ $ g++ ./example.cpp -o example -std=c++17 -pthread -lkurisu
 Then the echo server will listen port 5005   
 
 2.Multi-thread echo server
-```
+```cpp
 #include <kurisu/kurisu.h>
 
 void OnMsg(const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp)
@@ -91,7 +92,7 @@ int main()
 
 3.Echo server with `LengthDecoder`
 very similar to  `netty`'s `LengthFieldBasedFrameDecoder`
-```
+```cpp  
 #include <kurisu/kurisu.h>
 
 void OnMsg(const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp)
@@ -113,7 +114,6 @@ int main()
     server.Start();
     loop.Loop();
 }
-
 ```
 
 
