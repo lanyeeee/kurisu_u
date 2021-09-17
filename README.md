@@ -91,7 +91,7 @@ int main()
 ```
 
 3.Echo server with `LengthDecoder`
-very similar to  `netty`'s `LengthFieldBasedFrameDecoder`
+very similar to  [netty](https://github.com/netty/netty)'s `LengthFieldBasedFrameDecoder`
 ```cpp  
 #include <kurisu/kurisu.h>
 
