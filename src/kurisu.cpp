@@ -1,18 +1,8 @@
-#include <string>
-#include <string.h>
-#include <string_view>
 #include <execinfo.h>
 #include <cxxabi.h>
 #include <sys/syscall.h>
-#include <chrono>
 #include <pthread.h>
-#include <functional>
 #include <sys/prctl.h>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
-#include <atomic>
-#include <deque>
 #include <pwd.h>
 #include <dirent.h>
 #include <errno.h>
@@ -20,7 +10,6 @@
 #include <sys/stat.h>
 #include <sys/resource.h>  //rlimit
 #include <sys/times.h>     //tms
-#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/uio.h>  // readv
 #include <sys/timerfd.h>
@@ -28,11 +17,7 @@
 #include <unistd.h>
 #include <netdb.h>  //addrinfo
 #include <signal.h>
-#include <sys/epoll.h>
 #include <sys/eventfd.h>
-#include <map>
-#include <set>
-#include <any>
 
 #include "kurisu.h"
 #include "fmt/chrono.h"
@@ -2102,42 +2087,48 @@ namespace kurisu {
         Discard(len);
         return res;
     }
+    void Buffer::EnsureWritableBytes(uint64_t len)
+    {
+        if (WriteableBytes() < len)
+            MakeSpace(len);
+    }
     void Buffer::Append(const char* data, uint64_t len)
     {
         EnsureWritableBytes(len);
         memcpy(WriteIndex(), data, len);
         m_writeIndex += len;
     }
-    void Buffer::EnsureWritableBytes(uint64_t len)
+    void Buffer::AppendInt16(int16_t x)
     {
-        if (WriteableBytes() < len)
-            MakeSpace(len);
-    }
-    void Buffer::AppendInt64(int64_t x)
-    {
-        int64_t val = htonll(x);
-        Append(&val, sizeof(val));
+        int16_t n = htons(x);
+        Append(&n, sizeof(n));
     }
     void Buffer::AppendInt32(int x)
     {
-        int val = htonl(x);
-        Append(&val, sizeof(val));
+        int n = htonl(x);
+        Append(&n, sizeof(n));
     }
-    void Buffer::AppendInt16(int16_t x)
+    void Buffer::AppendInt64(int64_t x)
     {
-        int16_t val = htons(x);
-        Append(&val, sizeof(val));
+        int64_t n = htonll(x);
+        Append(&n, sizeof(n));
     }
-    int64_t Buffer::ReadInt64()
+    void Buffer::AppendFloat(float x)
     {
-        int64_t res = PeekInt64();
-        DiscardInt64();
-        return res;
+        int n = *(int*)&x;
+        n = htonl(n);
+        Append(&n, 4);
     }
-    int Buffer::ReadInt32()
+    void Buffer::AppendDouble(double x)
     {
-        int res = PeekInt32();
-        DiscardInt32();
+        int64_t n = *(int64_t*)&x;
+        n = htonll(n);
+        Append(&n, 8);
+    }
+    int8_t Buffer::ReadInt8()
+    {
+        int8_t res = PeekInt8();
+        DiscardInt8();
         return res;
     }
     int16_t Buffer::ReadInt16()
@@ -2146,44 +2137,61 @@ namespace kurisu {
         DiscardInt16();
         return res;
     }
-    int8_t Buffer::ReadInt8()
+    int Buffer::ReadInt32()
     {
-        int8_t res = PeekInt8();
-        DiscardInt8();
+        int res = PeekInt32();
+        DiscardInt32();
         return res;
     }
-    int64_t Buffer::PeekInt64() const
+    int64_t Buffer::ReadInt64()
     {
-        int64_t val = 0;
-        memcpy(&val, ReadIndex(), sizeof(val));
-        return ntohll(val);
+        int64_t res = PeekInt64();
+        DiscardInt64();
+        return res;
     }
-    int Buffer::PeekInt32() const
+    float Buffer::ReadFloat()
     {
-        int val = 0;
-        memcpy(&val, ReadIndex(), sizeof(val));
-        return ntohl(val);
+        float res = PeekFloat();
+        DiscardInt32();
+        return res;
+    }
+    double Buffer::ReadDouble()
+    {
+        double res = PeekDouble();
+        DiscardInt64();
+        return res;
     }
     int16_t Buffer::PeekInt16() const
     {
-        int16_t val = 0;
-        memcpy(&val, ReadIndex(), sizeof(val));
-        return ntohs(val);
+        int16_t n = 0;
+        memcpy(&n, ReadIndex(), sizeof(n));
+        return ntohs(n);
     }
-    void Buffer::PrependInt64(int64_t x)
+    int Buffer::PeekInt32() const
     {
-        int64_t val = htonll(x);
-        Prepend(&val, sizeof(val));
+        int n = 0;
+        memcpy(&n, ReadIndex(), sizeof(n));
+        return ntohl(n);
     }
-    void Buffer::PrependInt32(int x)
+    int64_t Buffer::PeekInt64() const
     {
-        int val = htonl(x);
-        Prepend(&val, sizeof(val));
+        int64_t n = 0;
+        memcpy(&n, ReadIndex(), sizeof(n));
+        return ntohll(n);
     }
-    void Buffer::PrependInt16(int16_t x)
+    float Buffer::PeekFloat() const
     {
-        int16_t val = htons(x);
-        Prepend(&val, sizeof(val));
+        int n = 0;
+        memcpy(&n, ReadIndex(), sizeof(n));
+        n = ntohl(n);
+        return *(float*)&n;
+    }
+    double Buffer::PeekDouble() const
+    {
+        int64_t n = 0;
+        memcpy(&n, ReadIndex(), sizeof(n));
+        n = ntohll(n);
+        return *(double*)&n;
     }
     void Buffer::Prepend(const void* data, uint64_t len)
     {
@@ -2191,6 +2199,33 @@ namespace kurisu {
             LOG_FATAL << "in Buffer::prepend   lack of PrependableBytes";
         m_readIndex -= len;
         memcpy((char*)ReadIndex(), (const char*)data, len);
+    }
+    void Buffer::PrependInt16(int16_t x)
+    {
+        int16_t n = htons(x);
+        Prepend(&n, sizeof(n));
+    }
+    void Buffer::PrependInt32(int x)
+    {
+        int n = htonl(x);
+        Prepend(&n, sizeof(n));
+    }
+    void Buffer::PrependInt64(int64_t x)
+    {
+        int64_t n = htonll(x);
+        Prepend(&n, sizeof(n));
+    }
+    void Buffer::PrependFloat(float x)
+    {
+        int n = *(int*)&x;
+        n = htonl(n);
+        Prepend(&n, sizeof(n));
+    }
+    void Buffer::PrependDouble(double x)
+    {
+        int64_t n = *(int64_t*)&x;
+        n = htonll(n);
+        Prepend(&n, sizeof(n));
     }
     void Buffer::Shrink(uint64_t reserve)
     {
@@ -2243,7 +2278,6 @@ namespace kurisu {
 
         return n;
     }
-
 
 
 

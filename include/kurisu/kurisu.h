@@ -1117,6 +1117,8 @@ namespace kurisu {
         void AppendInt32(int x);
         void AppendInt16(int16_t x);
         void AppendInt8(int8_t x) { Append(&x, sizeof(x)); }
+        void AppendFloat(float x);
+        void AppendDouble(double x);
 
         const char* ReadIndex() const { return Begin() + m_readIndex; }
         char* WriteIndex() { return Begin() + m_writeIndex; }
@@ -1126,16 +1128,22 @@ namespace kurisu {
         int ReadInt32();
         int16_t ReadInt16();
         int8_t ReadInt8();
+        float ReadFloat();
+        double ReadDouble();
 
         int64_t PeekInt64() const;
         int PeekInt32() const;
         int16_t PeekInt16() const;
         int8_t PeekInt8() const { return *ReadIndex(); }
+        float PeekFloat() const;
+        double PeekDouble() const;
 
         void PrependInt64(int64_t x);
         void PrependInt32(int x);
         void PrependInt16(int16_t x);
         void PrependInt8(int8_t x) { Prepend(&x, sizeof(x)); }
+        void PrependFloat(float x);
+        void PrependDouble(double x);
 
         void Shrink(uint64_t reserve);
 
@@ -1194,7 +1202,7 @@ namespace kurisu {
                 //body
                 if (readable - m_lengthFieldLength - m_lengthFieldOffset < bodyLen)
                     return false;
-                else if (msgLen > m_maxFrameLength)  //太长了
+                else if (msgLen > (uint64_t)m_maxFrameLength)  //太长了
                 {
                     buf->Discard(msgLen);
                     LOG_WARN << "msg was " << msgLen << " bytes,exceeds the maxFrameLength(" << m_maxFrameLength << ") you set,so the whole msg has been discarded";
