@@ -92,20 +92,5 @@
         "queue": "cpp",
         "cstdbool": "cpp"
     },
-    "sqltools.connections": [
-        {
-            "mysqlOptions": {
-                "authProtocol": "default"
-            },
-            "previewLimit": 50,
-            "server": "localhost",
-            "port": 3306,
-            "askForPassword": true,
-            "driver": "MySQL",
-            "name": "mysql",
-            "database": "kurisu",
-            "username": "root"
-        }
-    ],
     "C_Cpp.errorSquiggles": "Enabled"
 }

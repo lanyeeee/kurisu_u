@@ -1,8 +1,18 @@
+#include <string>
+#include <string.h>
+#include <string_view>
 #include <execinfo.h>
 #include <cxxabi.h>
 #include <sys/syscall.h>
+#include <chrono>
 #include <pthread.h>
+#include <functional>
 #include <sys/prctl.h>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
+#include <deque>
 #include <pwd.h>
 #include <dirent.h>
 #include <errno.h>
@@ -10,6 +20,7 @@
 #include <sys/stat.h>
 #include <sys/resource.h>  //rlimit
 #include <sys/times.h>     //tms
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/uio.h>  // readv
 #include <sys/timerfd.h>
@@ -17,7 +28,11 @@
 #include <unistd.h>
 #include <netdb.h>  //addrinfo
 #include <signal.h>
+#include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <map>
+#include <set>
+#include <any>
 
 #include "kurisu.h"
 #include "fmt/chrono.h"
@@ -2115,13 +2130,15 @@ namespace kurisu {
     }
     void Buffer::AppendFloat(float x)
     {
-        int n = *(int*)&x;
+        void* p = &x;
+        int n = *(int*)p;
         n = htonl(n);
         Append(&n, 4);
     }
     void Buffer::AppendDouble(double x)
     {
-        int64_t n = *(int64_t*)&x;
+        void* p = &x;
+        int64_t n = *(int64_t*)p;
         n = htonll(n);
         Append(&n, 8);
     }
@@ -2184,14 +2201,16 @@ namespace kurisu {
         int n = 0;
         memcpy(&n, ReadIndex(), sizeof(n));
         n = ntohl(n);
-        return *(float*)&n;
+        void* p = &n;
+        return *(float*)p;
     }
     double Buffer::PeekDouble() const
     {
         int64_t n = 0;
         memcpy(&n, ReadIndex(), sizeof(n));
         n = ntohll(n);
-        return *(double*)&n;
+        void* p = &n;
+        return *(double*)p;
     }
     void Buffer::Prepend(const void* data, uint64_t len)
     {
@@ -2217,13 +2236,15 @@ namespace kurisu {
     }
     void Buffer::PrependFloat(float x)
     {
-        int n = *(int*)&x;
+        void* p = &x;
+        int n = *(int*)p;
         n = htonl(n);
         Prepend(&n, sizeof(n));
     }
     void Buffer::PrependDouble(double x)
     {
-        int64_t n = *(int64_t*)&x;
+        void* p = &x;
+        int64_t n = *(int64_t*)p;
         n = htonll(n);
         Prepend(&n, sizeof(n));
     }

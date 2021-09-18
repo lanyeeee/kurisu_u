@@ -7,8 +7,6 @@ set(CMAKE_BUILD_TYPE "Release")
 set(LIBRARY_OUTPUT_PATH .)
 set(CMAKE_CXX_FLAGS "-pthread -std=gnu++17 -O3")
 
-#向工程添加多个特定的头文件搜索路径,路径之间用空格分隔
-#include_directories(include)
 
 aux_source_directory(src SRCKURISU)
 aux_source_directory(src/fmt SRCFMT)
