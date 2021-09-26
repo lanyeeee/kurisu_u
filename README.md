@@ -1,9 +1,9 @@
-# kurisu
+# kurisu_u
 
 ## Requires:  
 
   GCC >= 7.1(supports C++17 or above)  
-  [fmt](https://github.com/fmtlib/fmt)(format the log)  
+  [fmt](https://github.com/fmtlib/fmt)(will be installed when build `kurisu_u`)  
 &nbsp;
 ## Before using it you should:  
 ### 1. Make sure the version of g++  and gcc >= 7.1
