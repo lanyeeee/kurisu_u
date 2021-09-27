@@ -1,11 +1,20 @@
+**This is just a toy, please don't use it in your project**  
+
 # kurisu_u
+**`kurisu_u`**  is a modern C++ network library for developing high performance server, supports only `TCP` protocols and `Linux`. **`kurisu_u`** provides a TCP Server to support multi-threaded and nonblocking IO
 
-## Requires:  
+# Features
+- High-performance logging with sync and async logging support
+- `LengthCodec` to unpack, very similar to  netty's LengthFieldBasedFrameDecoder
+- Supports heartbeat, you can have the server send msg to all clients at the interval you set
+- `ShutdownTimingWheel` to shutdown the client connection which don't send msg for the time you set(usually used with heartbeat)
 
+# Requires:  
   GCC >= 7.1(supports C++17 or above)  
   [fmt](https://github.com/fmtlib/fmt)(will be installed when build `kurisu_u`)  
 &nbsp;
-## Before using it you should:  
+
+# Before using it you should:  
 ### 1. Make sure the version of g++  and gcc >= 7.1
 ```
 Check the g++/gcc version:
@@ -20,7 +29,7 @@ CentOS:
 $ sudo yum install cmake make
 ```    
 &nbsp;
-## Build
+# Build
 ### build with `cmake`
 make sure you are in thr root directory `kurisu_u`
 ```
@@ -29,10 +38,9 @@ $ cmake ..
 $ make -j$(nproc)
 $ sudo make install
 ```
-&nbsp;
-## Example
-1.The simplest echo server
-### `example.cpp`
+
+# Example
+### The simplest echo server
 ```cpp
 #include <kurisu/kurisu.h>
 
@@ -50,119 +58,15 @@ int main()
     loop.Loop();
 }
 ```
-### compile
-```
-$ g++ ./example.cpp -o example -std=c++17 -pthread -lkurisu
-```
-### run
-```
-./example
-```
-Then the echo server will listen port 5005   
+More details here [example.md](example.md)  
 
-2.Multi-thread echo server
-```cpp
-#include <kurisu/kurisu.h>
+# Benchmark
+![](/img/byte1024.png)  
+More details here [benchmark.md](benchmark.md)  
 
-void OnMsg(const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp)
-{
-    LOG_INFO << "recv msg:" << buf->ToString();
-    conn->Send(buf);
-}
-
-int main()
-{
-    kurisu::EventLoop loop;
-    kurisu::TcpServer server(&loop, kurisu::SockAddr(5005), "echo"); //listen port 5005
-
-    server.SetMessageCallback(OnMsg);
-
-    //TODO  this is the same as above
-    // server.SetMessageCallback([](const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp) {
-    //     LOG_INFO << "recv msg:" << buf->ToString();
-    //     conn->Send(buf);
-    // });
-
-    // 4 threads
-    server.SetThreadNum(4); 
-    server.Start();
-    loop.Loop();
-}
-```
-
-3.Echo server with `LengthDecoder`   
-very similar to  [netty](https://github.com/netty/netty)'s `LengthFieldBasedFrameDecoder`   
-This ensures that every callback has a complete msg in the buffer
-```cpp  
-#include <kurisu/kurisu.h>
-
-void OnMsg(const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp)
-{
-    LOG_INFO << "recv msg:" << buf->ToString();
-    conn->Send(buf);
-}
-
-int main()
-{
-    kurisu::EventLoop loop;
-    kurisu::TcpServer server(&loop, kurisu::SockAddr(5005), "echo");
-
-    server.SetMessageCallback(OnMsg);
-
-    //very similar to  netty's LengthFieldBasedFrameDecoder
-    server.SetLengthDecoder(65535, 0, 4, 0, 0);
-
-    server.Start();
-    loop.Loop();
-}
-```
-4.Chat server with `LengthDecoder`
-```cpp
-#include <kurisu/kurisu.h>
-#include <set>
-
-class ChatServer {
-public:
-    ChatServer(kurisu::EventLoop* loop, const kurisu::SockAddr& listenAddr, const std::string& name, kurisu::TcpServer::Option option = kurisu::TcpServer::k_NoReusePort)
-        : m_server(loop, listenAddr, name, option)
-    {
-        using namespace std::placeholders;
-        m_server.SetLengthDecoder(65535, 0, 4, 0, 0);
-        m_server.SetConnectionCallback(std::bind(&ChatServer::OnConn, this, _1));
-        m_server.SetMessageCallback(std::bind(&ChatServer::OnMsg, this, _1, _2, _3));
-    }
-
-    void Start() { m_server.Start(); }
-
-private:
-    void OnConn(const std::shared_ptr<kurisu::TcpConnection>& conn)
-    {
-        if (conn->Connected())
-            m_connections.insert(conn);  //add to set
-        else
-            m_connections.erase(conn);  //remove from set
-    }
-
-    void OnMsg(const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp)
-    {
-        LOG_INFO << "recv msg:" << buf->ToString();
-        for (auto&& it : m_connections)  //iterating the entire set
-            if (it != conn)              //if not itself
-                it->Send(buf);
-    }
-
-private:
-    kurisu::TcpServer m_server;
-    std::set<std::shared_ptr<kurisu::TcpConnection>> m_connections;
-};
+# Thanks
+Thanks [Chen Shuo](https://github.com/chenshuo),**`kurisu_u`** is highly inspired by [muduo](https://github.com/chenshuo/muduo).  
+Thanks [fmt](https://github.com/fmtlib/fmt),**`kurisu_u`**'s time formatting depends on it.
 
 
-int main()
-{
-    kurisu::EventLoop loop;
-    ChatServer server(&loop, kurisu::SockAddr(5005), "chat");
-    server.Start();
-    loop.Loop();
-}
-```
 

@@ -698,7 +698,7 @@ namespace kurisu {
         class Channel;
         class Poller;
         class TimerQueue;
-        class ShutDownTimingWheel;
+        class ShutdownTimingWheel;
         class HeartbeatTimingWheel;
 
     }  // namespace detail
@@ -786,7 +786,7 @@ namespace kurisu {
         std::unique_ptr<detail::Poller> m_poller;
         std::unique_ptr<detail::TimerQueue> timerQueue_;   //Timer队列
         std::unique_ptr<detail::Channel> m_wakeUpChannel;  //用于唤醒后的回调函数
-        std::unique_ptr<detail::ShutDownTimingWheel> m_shutdownTimingWheel;
+        std::unique_ptr<detail::ShutdownTimingWheel> m_shutdownTimingWheel;
         std::unique_ptr<detail::HeartbeatTimingWheel> m_heartbeatTimingWheel;
         std::vector<detail::Channel*> m_activeChannels;  // 保存所有有事件到来的channel
 
@@ -1170,10 +1170,10 @@ namespace kurisu {
         static const char k_CRLF[];
     };
 
-    class LengthDecoder : detail::copyable {
+    class LengthCodec : detail::copyable {
     public:
-        LengthDecoder() = default;
-        LengthDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
+        LengthCodec() = default;
+        LengthCodec(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
             : m_maxFrameLength(maxFrameLength),
               m_lengthFieldOffset(lengthFieldOffset),
               m_lengthFieldLength(lengthFieldLength),
@@ -1313,7 +1313,7 @@ namespace kurisu {
 
         void AddToShutdownTimingWheel();
 
-        void SetLengthDecoder(LengthDecoder* decoder) { m_decoder = *decoder; }
+        void SetLengthCodec(LengthCodec* decoder) { m_decoder = *decoder; }
 
     private:
         void UpdateShutdownTimingWheel();
@@ -1341,7 +1341,7 @@ namespace kurisu {
         EventLoop* m_loop;                     //所属的EventLoop
         std::unique_ptr<detail::Socket> m_socket;
         std::unique_ptr<detail::Channel> m_channel;
-        LengthDecoder m_decoder;
+        LengthCodec m_decoder;
         Buffer m_inputBuf;
         Buffer m_outputBuf;
         std::any m_any;
@@ -1382,7 +1382,7 @@ namespace kurisu {
 
         //must be called before Start
         //lengthFieldLength only supports 1/2/4/8
-        void SetLengthDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip);
+        void SetLengthCodec(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip);
 
         // must be called after Start
         std::shared_ptr<detail::EventLoopThreadPool> GetThreadPool() { return m_threadPool; }
@@ -1427,7 +1427,7 @@ namespace kurisu {
         std::unique_ptr<detail::Acceptor> m_acceptor;
         EventLoop* m_loop;  // TcpServer所属的EventLoop
         std::shared_ptr<detail::EventLoopThreadPool> m_threadPool;
-        LengthDecoder m_decoder;
+        LengthCodec m_decoder;
         const std::string m_ipPort;
         const std::string m_name;
         std::function<void(const std::shared_ptr<TcpConnection>&)> m_connCallback;                     //连接到来执行的回调函数
@@ -1438,7 +1438,7 @@ namespace kurisu {
     };
 
     namespace detail {
-        class ShutDownTimingWheel {
+        class ShutdownTimingWheel {
         private:
             class Entry {
             public:
@@ -1456,7 +1456,7 @@ namespace kurisu {
 
         public:
             //second
-            ShutDownTimingWheel(EventLoop* loop, int interval)
+            ShutdownTimingWheel(EventLoop* loop, int interval)
             {
                 loop->RunEvery(1.0, [this, interval] {
                     m_buckets.push_back(Bucket());

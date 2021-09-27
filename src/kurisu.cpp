@@ -1923,7 +1923,7 @@ namespace kurisu {
         AssertInLoopThread();
         std::atomic_int32_t n = 0;
         if (m_shutdownInterval != 0)
-            m_shutdownTimingWheel = std::make_unique<detail::ShutDownTimingWheel>(this, m_shutdownInterval);
+            m_shutdownTimingWheel = std::make_unique<detail::ShutdownTimingWheel>(this, m_shutdownInterval);
         if (m_heartbeatInterval != 0)
             m_heartbeatTimingWheel = std::make_unique<detail::HeartbeatTimingWheel>(this, m_heartbeatInterval);
 
@@ -2659,7 +2659,7 @@ namespace kurisu {
         //关闭回调函数,作用是将这个关闭的TcpConnection从map中删除
         conn->SetCloseCallback(std::bind(&TcpServer::RemoveConnection, this, std::placeholders::_1));
         conn->SetTcpNoDelay(m_tcpNoDelay);
-        conn->SetLengthDecoder(&m_decoder);
+        conn->SetLengthCodec(&m_decoder);
         if (m_heartbeatInterval != 0)
             ioLoop->AddHeartbeat(conn);
         ioLoop->Run(std::bind(&TcpConnection::ConnectEstablished, std::ref(conn)));
@@ -2688,12 +2688,12 @@ namespace kurisu {
         //所以离开这个函数后就只剩1,然后执行完TcpConnection::ConnectDestroyed,对应的TcpConnection才真正析构
     }
     void TcpServer::SetHeartbeatMsg(const void* data, int len) { detail::HeartbeatTimingWheel::Msg::SetMsg(data, len); }
-    void TcpServer::SetLengthDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
+    void TcpServer::SetLengthCodec(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
     {
         int len = lengthFieldLength;
         if (len != 1 && len != 2 && len != 4 && len != 8)
-            LOG_FATAL << "TcpServer::SetLengthDecoder lengthFieldLength only supports 1/2/4/8";
-        m_decoder = LengthDecoder(maxFrameLength, lengthFieldOffset, lengthFieldLength, lengthAdjustment, initialBytesToStrip);
+            LOG_FATAL << "TcpServer::SetLengthCodec lengthFieldLength only supports 1/2/4/8";
+        m_decoder = LengthCodec(maxFrameLength, lengthFieldOffset, lengthFieldLength, lengthAdjustment, initialBytesToStrip);
     }
 
 }  // namespace kurisu
