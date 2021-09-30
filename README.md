@@ -5,7 +5,7 @@
 
 # Features
 - High-performance logging with sync and async logging support
-- `LengthCodec` to unpack, very similar to  netty's LengthFieldBasedFrameDecoder
+- `LengthCodec` to unpack, very similar to  netty's `LengthFieldBasedFrameDecoder`
 - Supports heartbeat, you can have the server send msg to all clients at the interval you set
 - `ShutdownTimingWheel` to shutdown the client connection which don't send msg for the time you set(usually used with heartbeat)
 

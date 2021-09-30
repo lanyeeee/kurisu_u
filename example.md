@@ -83,7 +83,7 @@ int main()
     loop.Loop();
 }
 ```
-# 4.Echo server with `LengthCodec` and `Hearbeat`   
+# 4.Echo server with `LengthCodec` and `Heartbeat`   
 ```cpp
 #include <kurisu/kurisu.h>
 
@@ -113,7 +113,7 @@ int main()
 }
 
 ```  
-# 5.Echo server with `LengthCodec`,`Hearbeat`,`ShutdownTimingWheel`
+# 5.Echo server with `LengthCodec`,`Heartbeat`,`ShutdownTimingWheel`
 ```cpp
 #include <kurisu/kurisu.h>
 
@@ -148,7 +148,7 @@ int main()
 
 
 
-# 6.Chat server with  `LengthCodec`,`Hearbeat`,`ShutdownTimingWheel`
+# 6.Chat server with  `LengthCodec`,`Heartbeat`,`ShutdownTimingWheel`
 ```cpp
 #include <kurisu/kurisu.h>
 #include <set>
