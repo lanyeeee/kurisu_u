@@ -1085,6 +1085,7 @@ namespace kurisu {
         void Swap(Buffer& other);
         void Resize(uint64_t size);
         uint64_t Size() { return m_buf->len - k_PrependSize; }
+        void Clear() { m_readIndex = m_writeIndex = k_PrependSize; }
 
         uint64_t ReadableBytes() const { return m_writeIndex - m_readIndex; }
         uint64_t WriteableBytes() const { return m_buf->len - m_writeIndex; }
