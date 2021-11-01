@@ -1562,6 +1562,11 @@ namespace kurisu {
         uint64_t us = Usec() - Sec() * 1'000'000;
         return fmt::format_to(buf, FMT_COMPILE("[{:%F %T}.{:06}] "), fmt::localtime(m_stamp), us);
     }
+    int64_t Timestamp::Msec() const
+    {
+        using namespace std::chrono;
+        return duration_cast<milliseconds>(m_stamp.time_since_epoch()).count();
+    }
     int64_t Timestamp::Usec() const
     {
         using namespace std::chrono;

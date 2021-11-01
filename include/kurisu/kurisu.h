@@ -51,6 +51,7 @@ namespace kurisu {
         //format gmtime
         std::string GmFormatString() const;
         std::string LocalFormatString() const;
+        int64_t Msec() const;
         int64_t Usec() const;
         int64_t Nsec() const;
         int64_t Sec() const;
