@@ -148,7 +148,7 @@ namespace kurisu {
         void CountDownLatch::Wait()
         {
             std::unique_lock locker(m_mu);
-            while (m_count > 0)
+            if (m_count > 0)
                 m_cond.wait(locker, [this] { return m_count == 0; });
         }
         void CountDownLatch::CountDown()
