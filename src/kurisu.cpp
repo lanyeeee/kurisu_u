@@ -362,7 +362,7 @@ namespace kurisu {
 
         Thread::~Thread()
         {
-            if (m_started && m_thrd.joinable())
+            if (m_isStarted && m_thrd.joinable())
                 m_thrd.detach();
         }
         void Thread::SetDefaultName()
@@ -374,7 +374,7 @@ namespace kurisu {
         void Thread::Start()
         {
             using namespace detail;
-            m_started = true;
+            m_isStarted = true;
             auto thrdData = std::make_shared<ThreadData>(std::move(m_func), m_name, m_tid, m_latch);
             m_thrd = std::thread(ThrdEntrance, thrdData);
             m_pthreadID = m_thrd.native_handle();
@@ -386,12 +386,12 @@ namespace kurisu {
 
         ThreadPool::~ThreadPool()
         {
-            if (m_running)
+            if (m_isRunning)
                 Stop();
         }
         void ThreadPool::SetThrdNum(int thrdNum)
         {
-            m_running = 1;
+            m_isRunning = 1;
             m_thrds.reserve(thrdNum);
             for (int i = 0; i < thrdNum; i++)
             {
@@ -410,7 +410,7 @@ namespace kurisu {
             {
                 if (m_thrdInitCallBack)
                     m_thrdInitCallBack();  //如果有初始化的回调函数就执行
-                while (m_running)
+                while (m_isRunning)
                     if (std::function<void()> func(Take()); func)  //从函数队列中拿出函数，是可执行的函数就执行，直到m_running被变成false
                         func();
             }
@@ -436,14 +436,14 @@ namespace kurisu {
         std::function<void()> ThreadPool::Take()
         {
             std::unique_lock locker(m_mu);
-            if (m_task.empty() && m_running)
-                m_notEmptyCond.wait(locker, [this] { return !m_task.empty() || !m_running; });  //等到有任务为止
+            if (m_tasks.empty() && m_isRunning)
+                m_notEmptyCond.wait(locker, [this] { return !m_tasks.empty() || !m_isRunning; });  //等到有任务为止
 
             std::function<void()> func;
-            if (!m_task.empty())
+            if (!m_tasks.empty())
             {
-                func = std::move(m_task.front());  //取出函数
-                m_task.pop_front();
+                func = std::move(m_tasks.front());  //取出函数
+                m_tasks.pop_front();
             }
             if (m_maxSize > 0)
                 m_notFullCond.notify_one();  //如果对等待队列做了大小限制，就通知其他线程，等待队列有空闲了
@@ -463,13 +463,13 @@ namespace kurisu {
                 //这样做效率可能会有所提高，但是会更占用更多内存
                 //而且使用不当还会造成等待队列爆满的情况，建议还是设置一个大小
                 //除非你很清楚你在干什么
-                if (Full() && m_running)
-                    m_notFullCond.wait(locker, [this] { return !Full() || !m_running; });  //线程池中的线程都忙，就等到有空闲的线程为止
+                if (Full() && m_isRunning)
+                    m_notFullCond.wait(locker, [this] { return !Full() || !m_isRunning; });  //线程池中的线程都忙，就等到有空闲的线程为止
 
-                if (!m_running)  //如果已经析构，线程退出
+                if (!m_isRunning)  //如果已经析构，线程退出
                     return;
 
-                m_task.emplace_back(std::move(task));  //将task加入队列
+                m_tasks.emplace_back(std::move(task));  //将task加入队列
                 //printf("m_task.size()=%lu\n", m_task.size());
                 m_notEmptyCond.notify_one();  //通知其他线程等待队列已有任务
             }
@@ -478,7 +478,7 @@ namespace kurisu {
         {
             {
                 std::lock_guard locker(m_mu);
-                m_running = 0;
+                m_isRunning = 0;
                 m_notFullCond.notify_all();
                 m_notEmptyCond.notify_all();
             }
@@ -500,9 +500,9 @@ namespace kurisu {
         uint64_t ThreadPool::Size() const
         {
             std::lock_guard locker(m_mu);
-            return m_task.size();
+            return m_tasks.size();
         }
-        bool ThreadPool::Full() const { return m_maxSize > 0 && m_task.size() >= m_maxSize; }
+        bool ThreadPool::Full() const { return m_maxSize > 0 && m_tasks.size() >= m_maxSize; }
 
 
 
@@ -1058,7 +1058,7 @@ namespace kurisu {
 
         EventLoopThread::~EventLoopThread()
         {
-            m_exiting = true;
+            m_isExiting = true;
             if (m_loop != nullptr)
             {
                 m_loop->Quit();
@@ -1104,7 +1104,7 @@ namespace kurisu {
                                         const std::function<void(EventLoop*)>& threadInitCallback)
         {
             m_loop->AssertInLoopThread();
-            m_started = true;
+            m_isStarted = true;
             //创建m_thrdNum个线程，每个线程都用threadInitCallback进行初始化
             for (int i = 0; i < m_thrdNum; i++)
             {
@@ -1157,7 +1157,7 @@ namespace kurisu {
 
         void Channel::RunCallback(Timestamp timestamp)
         {
-            if (m_tied)
+            if (m_isTied)
             {
                 if (std::shared_ptr<void> guard = m_tie.lock(); guard)  //如果绑定的对象还活着
                     RunCallbackWithGuard(timestamp);
@@ -1168,11 +1168,11 @@ namespace kurisu {
         void Channel::Tie(const std::shared_ptr<void>& obj)
         {
             m_tie = obj;
-            m_tied = true;
+            m_isTied = true;
         }
         void Channel::Remove()
         {
-            m_inLoop = false;
+            m_isInLoop = false;
             m_loop->RemoveChannel(this);
         }
         std::string Channel::EventsToString(int fd, int ev)
@@ -1196,12 +1196,12 @@ namespace kurisu {
         }
         void Channel::Update()
         {
-            m_inLoop = true;
+            m_isInLoop = true;
             m_loop->UpdateChannel(this);
         }
         void Channel::RunCallbackWithGuard(Timestamp timestamp)
         {
-            m_runningCallback = true;
+            m_isRunningCallback = true;
             LOG_TRACE << ReventsString();
             if ((m_revents & EPOLLHUP) && !(m_revents & EPOLLIN))  //客户端主动关闭(调用close)
             {
@@ -1225,7 +1225,7 @@ namespace kurisu {
                 if (m_writeCallback)
                     m_writeCallback();
             }
-            m_runningCallback = false;
+            m_isRunningCallback = false;
         }
         void Channel::OnReading()
         {
@@ -1401,7 +1401,7 @@ namespace kurisu {
 
             if (auto p = m_timers.find(id.Key()); p != m_timers.end())
             {
-                if (!m_runningCallback)
+                if (!m_isRunningCallback)
                     m_timers.erase(p);
                 else
                     m_cancelledSoon.emplace_back(p->second.get());
@@ -1415,11 +1415,11 @@ namespace kurisu {
 
             //获取now之前的所有Timer
             TimeoutTimer timeout = GetTimeout(now);
-            m_runningCallback = true;
+            m_isRunningCallback = true;
             //调用超时Timer的回调函数
             for (auto&& item : timeout)
                 item->Run();
-            m_runningCallback = false;
+            m_isRunningCallback = false;
 
             //重置非一次性的Timer
             Reset(timeout);
@@ -1473,7 +1473,7 @@ namespace kurisu {
             : m_loop(loop),
               m_sock(detail::MakeNonblockingSocket(listenAddr.Famliy())),
               m_channel(loop, m_sock.fd()),
-              m_listening(false),
+              m_isListening(false),
               m_voidfd(open("/dev/null", O_RDONLY | O_CLOEXEC))  //预先准备一个空闲的fd
         {
             m_sock.SetReuseAddr(true);  //设置SO_REUSEADDR,如果这个端口处于TIME_WAIT,也可bind成功
@@ -1493,7 +1493,7 @@ namespace kurisu {
         void Acceptor::Listen()
         {
             m_loop->AssertInLoopThread();
-            m_listening = true;
+            m_isListening = true;
             m_sock.listen();
             m_channel.OnReading();
         }
@@ -1765,13 +1765,13 @@ namespace kurisu {
         m_bufs.reserve(16);
         Logger::SetTimeZone(m_isLocalTimeZone);
 
-        m_running = true;
+        m_isRunning = true;
         m_thrd.Start();
         m_latch.Wait();
     }
     AsyncLogFile::~AsyncLogFile()
     {
-        if (m_running)
+        if (m_isRunning)
             Stop();
     }
     void AsyncLogFile::Append(const char* logline, uint64_t len)
@@ -1794,7 +1794,7 @@ namespace kurisu {
     }
     void AsyncLogFile::Stop()
     {
-        m_running = false;
+        m_isRunning = false;
         m_fullCond.notify_one();
         m_thrd.Join();
     }
@@ -1811,7 +1811,7 @@ namespace kurisu {
 
         BufVector bufVec;  //空Buf
         bufVec.reserve(16);
-        while (m_running)
+        while (m_isRunning)
         {
             {
                 std::unique_lock locker(m_mu);
@@ -1911,8 +1911,8 @@ namespace kurisu {
             detail::t_loopOfThisThread = this;
         m_wakeUpChannel->SetReadCallback(std::bind(&EventLoop::WakeUpRead, this));  //以便调用quit时唤醒loop
         m_wakeUpChannel->OnReading();
-        m_runningExtraFuncs.reserve(4);
-        m_waitingExtraFuncs.reserve(4);
+        m_runningTasks.reserve(4);
+        m_waitingTasks.reserve(4);
     }
     EventLoop::~EventLoop()
     {
@@ -1933,11 +1933,11 @@ namespace kurisu {
             m_heartbeatTimingWheel = std::make_unique<detail::HeartbeatTimingWheel>(this, m_heartbeatInterval);
 
 
-        m_looping = true;
-        m_quit = false;
+        m_isLooping = true;
+        m_isQuit = false;
         LOG_TRACE << "EventLoop " << this << " start looping";
 
-        while (!m_quit)
+        while (!m_isQuit)
         {
             //没事的时候loop会阻塞在这里
             m_returnTime = m_poller->Poll(detail::k_PollTimeoutMs, &m_activeChannels);
@@ -1945,21 +1945,21 @@ namespace kurisu {
 
             if (Logger::Level() <= Logger::LogLevel::TRACE)
                 PrintActiveChannels();  //将发生的事件写入日志
-            m_runningCallback = true;
+            m_isRunningCallback = true;
             //执行每个有事件到来的channel的回调函数
             for (auto&& channel : m_activeChannels)
                 channel->RunCallback(m_returnTime);
 
             m_thisActiveChannel = nullptr;
-            m_runningCallback = false;
-            RunExtraFunc();  //执行额外的回调函数
+            m_isRunningCallback = false;
+            RunTasks();  //执行额外的回调函数
         }
         LOG_TRACE << "EventLoop " << this << " stop looping";
-        m_looping = false;
+        m_isLooping = false;
     }
     void EventLoop::Quit()
     {
-        m_quit = true;
+        m_isQuit = true;
         if (!InLoopThread())
             Wakeup();
     }
@@ -1968,22 +1968,22 @@ namespace kurisu {
         if (InLoopThread())
             callback();
         else
-            AddExtraFunc(std::move(callback));
+            AddTask(std::move(callback));
     }
-    void EventLoop::AddExtraFunc(std::function<void()> callback)
+    void EventLoop::AddTask(std::function<void()> callback)
     {
         {
             std::lock_guard lock(m_mu);
-            m_waitingExtraFuncs.emplace_back(std::move(callback));
+            m_waitingTasks.emplace_back(std::move(callback));
         }
 
-        if (!InLoopThread() || m_runningExtraFunc)
+        if (!InLoopThread() || m_isRunningTasks)
             Wakeup();
     }
-    uint64_t EventLoop::GetExtraFuncsNum() const
+    uint64_t EventLoop::GetTasksNum() const
     {
         std::lock_guard lock(m_mu);
-        return m_waitingExtraFuncs.size();
+        return m_waitingTasks.size();
     }
     void EventLoop::Wakeup()
     {
@@ -2015,22 +2015,22 @@ namespace kurisu {
         if (n != sizeof(one))
             LOG_ERROR << "EventLoop::WakeUpRead() reads " << n << " bytes instead of 8";
     }
-    void EventLoop::RunExtraFunc()
+    void EventLoop::RunTasks()
     {
-        if (m_waitingExtraFuncs.empty())
+        if (m_waitingTasks.empty())
             return;
         else
         {
-            m_runningExtraFunc = true;
+            m_isRunningTasks = true;
             std::lock_guard lock(m_mu);
-            m_runningExtraFuncs.swap(m_waitingExtraFuncs);
+            m_runningTasks.swap(m_waitingTasks);
         }
         //既减少了持有锁的时间，也防止了死锁(func里可能也调用了RunExtraFunc()
 
-        for (auto&& func : m_runningExtraFuncs)
+        for (auto&& func : m_runningTasks)
             func();
-        m_runningExtraFuncs.clear();
-        m_runningExtraFunc = false;
+        m_runningTasks.clear();
+        m_isRunningTasks = false;
     }
     void EventLoop::PrintActiveChannels() const
     {
@@ -2345,7 +2345,7 @@ namespace kurisu {
                 SendInLoop(msg.data(), msg.size());  //如果是当前线程就直接发送
             else
                 //否则放到loop待执行回调队列执行,会发生拷贝
-                m_loop->AddExtraFunc(std::bind(&TcpConnection::SendStringView, this, msg));
+                m_loop->AddTask(std::bind(&TcpConnection::SendStringView, this, msg));
         }
     }
     void TcpConnection::Send(const std::string_view& msg)
@@ -2356,7 +2356,7 @@ namespace kurisu {
                 SendInLoop(msg.data(), msg.size());  //如果是当前线程就直接发送
             else
                 //否则放到loop待执行回调队列执行,会发生拷贝
-                m_loop->AddExtraFunc(std::bind(&TcpConnection::SendStringView, this, std::string(msg)));
+                m_loop->AddTask(std::bind(&TcpConnection::SendStringView, this, std::string(msg)));
         }
     }
     void TcpConnection::Send(Buffer* buf)
@@ -2370,7 +2370,7 @@ namespace kurisu {
             }
             else
                 //否则放到loop待执行回调队列执行,会发生拷贝
-                m_loop->AddExtraFunc(std::bind(&TcpConnection::SendStringView, this, buf->RetrieveAllAsString()));
+                m_loop->AddTask(std::bind(&TcpConnection::SendStringView, this, buf->RetrieveAllAsString()));
         }
     }
     void TcpConnection::Shutdown()
@@ -2386,7 +2386,7 @@ namespace kurisu {
         if (m_status == k_Connected || m_status == k_Disconnecting)
         {
             m_status = k_Disconnecting;
-            m_loop->AddExtraFunc(std::bind(&TcpConnection::ForceCloseInLoop, shared_from_this()));
+            m_loop->AddTask(std::bind(&TcpConnection::ForceCloseInLoop, shared_from_this()));
         }
     }
     void TcpConnection::ForceCloseWithDelay(double seconds)
@@ -2420,7 +2420,7 @@ namespace kurisu {
     {
         m_loop->AssertInLoopThread();
         int savedErrno = 0;
-        if (m_inShutdownTimingWheel)
+        if (m_isInShutdownTimingWheel)
             UpdateShutdownTimingWheel();
         //尝试一次读完tcp缓冲区的所有数据,返回实际读入的字节数(一次可能读不完)
         ssize_t n = m_inputBuf.ReadSocket(m_channel->fd(), &savedErrno);
@@ -2465,7 +2465,7 @@ namespace kurisu {
                     m_channel->OffWriting();
                     //如果设置了写完的回调函数就进行回调
                     if (m_writeCompleteCallback)
-                        m_loop->AddExtraFunc(std::bind(m_writeCompleteCallback, shared_from_this()));
+                        m_loop->AddTask(std::bind(m_writeCompleteCallback, shared_from_this()));
                     if (m_status == k_Disconnecting)
                         ShutdownInLoop();
                 }
@@ -2524,7 +2524,7 @@ namespace kurisu {
             {
                 remain = len - n;
                 if (m_writeCompleteCallback && remain == 0)  //写完且有回调要执行
-                    m_loop->AddExtraFunc(std::bind(m_writeCompleteCallback, shared_from_this()));
+                    m_loop->AddTask(std::bind(m_writeCompleteCallback, shared_from_this()));
             }
             else  //出错,一点也写不进
             {
@@ -2580,24 +2580,24 @@ namespace kurisu {
     void TcpConnection::StartReadInLoop()
     {
         m_loop->AssertInLoopThread();
-        if (!m_reading || !m_channel->IsReading())
+        if (!m_isReading || !m_channel->IsReading())
         {
             m_channel->OnReading();
-            m_reading = true;
+            m_isReading = true;
         }
     }
     void TcpConnection::StopReadInLoop()
     {
         m_loop->AssertInLoopThread();
-        if (m_reading || m_channel->IsReading())
+        if (m_isReading || m_channel->IsReading())
         {
             m_channel->OffReading();
-            m_reading = false;
+            m_isReading = false;
         }
     }
     void TcpConnection::AddToShutdownTimingWheel()
     {
-        m_inShutdownTimingWheel = true;
+        m_isInShutdownTimingWheel = true;
         m_loop->AddShutdown(shared_from_this());
     }
     void TcpConnection::UpdateShutdownTimingWheel()
@@ -2623,9 +2623,9 @@ namespace kurisu {
     }
     void TcpServer::Start()
     {
-        if (!m_started)
+        if (!m_isStarted)
         {
-            m_started = true;
+            m_isStarted = true;
             m_threadPool->Start(m_shutdownInterval, m_heartbeatInterval, m_threadInitCallback);
             m_loop->Run(std::bind(&detail::Acceptor::Listen, m_acceptor.get()));
         }
@@ -2663,7 +2663,7 @@ namespace kurisu {
         conn->SetWriteCompleteCallback(m_writeCompleteCallback);
         //关闭回调函数,作用是将这个关闭的TcpConnection从map中删除
         conn->SetCloseCallback(std::bind(&TcpServer::RemoveConnection, this, std::placeholders::_1));
-        conn->SetTcpNoDelay(m_tcpNoDelay);
+        conn->SetTcpNoDelay(m_isTcpNoDelay);
         conn->SetLengthCodec(&m_decoder);
         if (m_heartbeatInterval != 0)
             ioLoop->AddHeartbeat(conn);
@@ -2687,7 +2687,7 @@ namespace kurisu {
         m_connections.erase(conn->Name());
 
         //不直接用m_loop->run是因为TcpConnection::ConnectDestroyed应该交给其对应的EventLoop执行
-        conn->GetLoop()->AddExtraFunc(std::bind(&TcpConnection::ConnectDestroyed, conn));
+        conn->GetLoop()->AddTask(std::bind(&TcpConnection::ConnectDestroyed, conn));
         //此时conn引用计数为2
         //1.conn本身   2.上面bind了一个
         //所以离开这个函数后就只剩1,然后执行完TcpConnection::ConnectDestroyed,对应的TcpConnection才真正析构

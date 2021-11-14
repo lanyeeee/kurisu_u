@@ -308,7 +308,7 @@ namespace kurisu {
             void Start();
             void Join() { m_thrd.join(); }
 
-            bool Started() const { return m_started; }
+            bool Started() const { return m_isStarted; }
             pid_t Tid() const { return m_tid; }
             const std::string& Name() const { return m_name; }
 
@@ -317,7 +317,7 @@ namespace kurisu {
         private:
             void SetDefaultName();
 
-            bool m_started = 0;
+            bool m_isStarted = 0;
             pthread_t m_pthreadID = 0;
             pid_t m_tid = 0;
             std::function<void()> m_func;
@@ -356,7 +356,7 @@ namespace kurisu {
             std::function<void()> Take();
 
         private:
-            std::atomic_bool m_running = 0;  //退出的标志
+            std::atomic_bool m_isRunning = 0;  //退出的标志
             uint64_t m_maxSize = 0;
             std::string m_name;
             mutable std::mutex m_mu;
@@ -364,7 +364,7 @@ namespace kurisu {
             std::condition_variable m_notFullCond;
             std::function<void()> m_thrdInitCallBack;
             std::vector<std::unique_ptr<Thread>> m_thrds;
-            std::deque<std::function<void()>> m_task;
+            std::deque<std::function<void()>> m_tasks;
         };
 
 
@@ -542,9 +542,9 @@ namespace kurisu {
         void Handle();
 
     private:
-        const int k_flushInterval;           //多少秒就flush一次
-        bool m_isLocalTimeZone;              //是否使用本地时区
-        std::atomic_bool m_running = false;  //是否已运行
+        const int k_flushInterval;             //多少秒就flush一次
+        bool m_isLocalTimeZone;                //是否使用本地时区
+        std::atomic_bool m_isRunning = false;  //是否已运行
         const std::string m_fileName;
         const int64_t m_rollSize;  //  多少byte就roll一次
         detail::Thread m_thrd;
@@ -671,27 +671,27 @@ namespace kurisu {
         class Timer : uncopyable {
         public:
             Timer(std::function<void()> cb, Timestamp when, double interval)
-                : m_runtime(when), m_interval(interval), m_repeat(interval > 0.0), m_callback(std::move(cb)) {}
+                : m_runtime(when), m_interval(interval), m_isRepeat(interval > 0.0), m_callback(std::move(cb)) {}
 
             void Run() const { m_callback(); }
             void Restart()
             {
                 //如果是重复的定时器
-                if (m_repeat)
+                if (m_isRepeat)
                     m_runtime = Timestamp::AddTime(m_runtime, m_interval);  //重新计算下一个超时时刻
                 else
                     m_runtime = Timestamp::Invalid();
             }
 
             Timestamp GetRuntime() const { return m_runtime; }
-            bool IsRepeat() const { return m_repeat; }
+            bool IsRepeat() const { return m_isRepeat; }
 
 
 
         private:
             Timestamp m_runtime;                     //超时的时刻(理想状态下回调函数运行的时刻)
             const double m_interval;                 //触发超时的间隔,为0则代表是一次性定时器
-            const bool m_repeat;                     //是否重复
+            const bool m_isRepeat;                   //是否重复
             const std::function<void()> m_callback;  //定时器回调函数
         };
 
@@ -728,7 +728,7 @@ namespace kurisu {
         //在EventLoop所属的线程中执行此函数
         void Run(std::function<void()> callback);
         //注册只执行一次的额外任务
-        void AddExtraFunc(std::function<void()> callback);
+        void AddTask(std::function<void()> callback);
         //某时刻触发Timer
         TimerID RunAt(Timestamp time, std::function<void()> callback);
         //多久后触发Timer,单位second
@@ -738,7 +738,7 @@ namespace kurisu {
         //取消定时器
         void Cancel(TimerID timerID);
 
-        uint64_t GetExtraFuncsNum() const;
+        uint64_t GetTasksNum() const;
         //唤醒阻塞在poll的loop
         void Wakeup();
         //注册channel到poller的map中
@@ -753,7 +753,7 @@ namespace kurisu {
         //此线程是否是相应的IO线程
         bool InLoopThread() const { return m_threadID == this_thrd::Tid(); }
         //是否正在调用回调函数
-        bool IsRunningCallback() const { return m_runningCallback; }
+        bool IsRunningCallback() const { return m_isRunningCallback; }
         //将此TcpConnection加入到ShutdownTimingWheel中
         void AddShutdown(const std::shared_ptr<TcpConnection>& conn);
         //更新此TcpConnection,以防ShutdownTimingWheelTimingWheel时间到调用Shutdown
@@ -768,16 +768,16 @@ namespace kurisu {
 
     private:
         void WakeUpRead();
-        void RunExtraFunc();
+        void RunTasks();
 
         //DEBUG用的,打印每个事件
         void PrintActiveChannels() const;
 
-        bool m_looping = false;           //线程是否调用了Loop()
-        bool m_runningCallback = false;   //线程是否正在执行回调函数
-        bool m_runningExtraFunc = false;  //  EventLoop线程是否正在执行的额外任务
-        std::atomic_bool m_quit = false;  //线程是否调用了Quit()
-        int m_wakeUpfd;                   //一个eventfd   用于唤醒阻塞在Poll的Loop
+        bool m_isLooping = false;           //线程是否调用了Loop()
+        bool m_isRunningCallback = false;   //线程是否正在执行回调函数
+        bool m_isRunningTasks = false;      //  EventLoop线程是否正在执行的额外任务
+        std::atomic_bool m_isQuit = false;  //线程是否调用了Quit()
+        int m_wakeUpfd;                     //一个eventfd   用于唤醒阻塞在Poll的Loop
         int m_shutdownInterval = 0;
         int m_heartbeatInterval = 0;
         const pid_t m_threadID;
@@ -792,9 +792,9 @@ namespace kurisu {
         std::vector<detail::Channel*> m_activeChannels;  // 保存所有有事件到来的channel
 
         //EventLoop线程每次轮询除了执行有事件到来的channel的回调函数外，也会执行这个vector内的函数（额外的任务）
-        std::vector<std::function<void()>> m_waitingExtraFuncs;
-        std::vector<std::function<void()>> m_runningExtraFuncs;
-        mutable std::mutex m_mu;  //保护m_ExtraFuncs;
+        std::vector<std::function<void()>> m_waitingTasks;
+        std::vector<std::function<void()>> m_runningTasks;
+        mutable std::mutex m_mu;  //保护Tasks
     };
 
     namespace detail {
@@ -822,7 +822,7 @@ namespace kurisu {
             void Handle();
 
             EventLoop* m_loop = nullptr;
-            bool m_exiting = false;
+            bool m_isExiting = false;
             int m_shutdownInterval;
             int m_heartbeatInterval;
             Thread m_thrd;
@@ -841,13 +841,13 @@ namespace kurisu {
             EventLoop* GetNextLoop();
             EventLoop* GetLoopRandom();
             std::vector<EventLoop*> GetAllLoops();
-            bool Started() const { return m_started; }
+            bool Started() const { return m_isStarted; }
             const std::string& Name() const { return m_name; }
 
         private:
             EventLoop* m_loop;
             std::string m_name;
-            bool m_started = false;
+            bool m_isStarted = false;
             int m_thrdNum = 0;
             int m_next = 0;
             std::vector<std::unique_ptr<EventLoopThread>> m_thrds;
@@ -923,10 +923,10 @@ namespace kurisu {
             static const int k_ReadEvent = EPOLLIN | EPOLLPRI;  //可读
             static const int k_WriteEvent = EPOLLOUT;           //可写
 
-            bool m_tied = false;             //  是否将生命周期绑定到了外部s
-            bool m_runningCallback = false;  //是否处于处理事件中
-            bool m_inLoop = false;           //是否已在EventLoop里注册
-            bool m_logHup = true;            //EPOLLHUP时是否生成日志
+            bool m_isTied = false;             //  是否将生命周期绑定到了外部s
+            bool m_isRunningCallback = false;  //是否处于处理事件中
+            bool m_isInLoop = false;           //是否已在EventLoop里注册
+            bool m_logHup = true;              //EPOLLHUP时是否生成日志
 
             const int m_fd;     //此channel负责管理的文件描述符
             int m_events = 0;   //注册的事件
@@ -1003,7 +1003,7 @@ namespace kurisu {
             //向TimerMap中插入timer
             bool Insert(detail::Timer* timer);
 
-            bool m_runningCallback = false;
+            bool m_isRunningCallback = false;
             const int m_timerfd;
             EventLoop* m_loop;                     //TimerQueue所属的EventLoop
             std::vector<TimerID> m_cancelledSoon;  //即将被cancel的timer
@@ -1020,7 +1020,7 @@ namespace kurisu {
                 m_connectionCallback = cb;
             }
             void Listen();
-            bool Listening() const { return m_listening; }
+            bool Listening() const { return m_isListening; }
 
         private:
             //处理事件
@@ -1030,7 +1030,7 @@ namespace kurisu {
             detail::Socket m_sock;
             Channel m_channel;
             std::function<void(int sockfd, const SockAddr&)> m_connectionCallback;
-            bool m_listening;
+            bool m_isListening;
             int m_voidfd;  //空闲的fd,用于处理fd过多的情况
         };
 
@@ -1281,7 +1281,7 @@ namespace kurisu {
         void StartRead() { m_loop->Run(std::bind(&TcpConnection::StartReadInLoop, this)); }
         void StopRead() { m_loop->Run(std::bind(&TcpConnection::StopReadInLoop, this)); }
         //线程不安全
-        bool IsReading() const { return m_reading; }
+        bool IsReading() const { return m_isReading; }
         //连接建立 销毁 产生关闭事件时 都会调用这个回调函数
         void SetConnectionCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback) { m_connCallback = callback; }
         //接收到数据之后会调用这个回调函数
@@ -1337,10 +1337,10 @@ namespace kurisu {
         static const int k_Connected = 2;
         static const int k_Disconnecting = 3;
 
-        bool m_reading;                        //是否正在read
-        bool m_inShutdownTimingWheel = false;  //是否已在ShutdownTimingWheel中
-        std::atomic_int m_status;              //连接的状态
-        EventLoop* m_loop;                     //所属的EventLoop
+        bool m_isReading;                        //是否正在read
+        bool m_isInShutdownTimingWheel = false;  //是否已在ShutdownTimingWheel中
+        std::atomic_int m_status;                //连接的状态
+        EventLoop* m_loop;                       //所属的EventLoop
         std::unique_ptr<detail::Socket> m_socket;
         std::unique_ptr<detail::Channel> m_channel;
         LengthCodec m_decoder;
@@ -1374,7 +1374,7 @@ namespace kurisu {
         //must be called before Start
         void SetThreadInitCallback(const std::function<void(EventLoop*)>& callback) { m_threadInitCallback = callback; }
         //must be called before Start
-        void SetTcpNoDelay(bool on) { m_tcpNoDelay = on; }
+        void SetTcpNoDelay(bool on) { m_isTcpNoDelay = on; }
         //must be called before Start
         void SetShutdownInterval(int interval) { m_shutdownInterval = interval; }
         //must be called before Start
@@ -1421,8 +1421,8 @@ namespace kurisu {
         void RemoveConnectionInLoop(const std::shared_ptr<TcpConnection>& conn);
 
     private:
-        bool m_tcpNoDelay = false;
-        std::atomic_bool m_started = false;
+        bool m_isTcpNoDelay = false;
+        std::atomic_bool m_isStarted = false;
         int m_nextConnID;
         int m_shutdownInterval = 0;
         int m_heartbeatInterval = 0;
