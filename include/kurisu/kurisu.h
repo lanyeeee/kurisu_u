@@ -48,7 +48,7 @@ namespace kurisu {
         bool Valid() { return m_stamp != s_invalid; }
         char* GmLogFormat(char* buf) const;
         char* LocalLogFormat(char* buf) const;
-        //format gmtime
+        // format gmtime
         std::string GmFormatString() const;
         std::string LocalFormatString() const;
         int64_t Msec() const;
@@ -66,7 +66,7 @@ namespace kurisu {
 
         static Timestamp Now() { return Timestamp(); }
         static Timestamp Invalid() { return Timestamp(s_invalid); }
-        //seconds
+        // seconds
         static double TimeDifference(Timestamp high, Timestamp low);
         static Timestamp AddTime(Timestamp stamp, double second);
 
@@ -153,7 +153,7 @@ namespace kurisu {
             int GetCount() const;
 
         private:
-            mutable std::mutex m_mu;  //使const函数也能lock
+            mutable std::mutex m_mu;  // 使const函数也能lock
             std::condition_variable m_cond;
             int m_count;
         };
@@ -224,7 +224,7 @@ namespace kurisu {
         };
 
 
-        //效率很高的itoa算法，比to_string快5倍以上
+        // 效率很高的itoa算法，比to_string快5倍以上
         template <typename T>
         uint64_t Convert(char buf[], T value)
         {
@@ -248,21 +248,21 @@ namespace kurisu {
 
             return p - buf;
         }
-        //效率很高的pointer->str算法
+        // 效率很高的pointer->str算法
         uint64_t ConvertHex(char buf[], uintptr_t value);
 
-        //用于读小于64KB的文件
+        // 用于读小于64KB的文件
         class ReadSmallFile : uncopyable {
         public:
             ReadSmallFile(StringArg filepath);
             ~ReadSmallFile();
-            //把文件的数据读到传进来的std::string里 返回errno
+            // 把文件的数据读到传进来的std::string里 返回errno
             int ReadToString(int maxSize, std::string& content, int64_t* fileSize, int64_t* modifyTime, int64_t* createTime);
-            //把文件的数据读到m_buf里  返回errno
+            // 把文件的数据读到m_buf里  返回errno
             int ReadToBuffer(int* size);
             const char* Buffer() const { return m_buf; }
 
-            static const int k_BufferSize = 64 * 1024;  //byte
+            static const int k_BufferSize = 64 * 1024;  // byte
 
         private:
             int m_fd;
@@ -270,7 +270,7 @@ namespace kurisu {
             char m_buf[k_BufferSize];
         };
 
-        //将filepath对应的文件读到传进来的std::string里
+        // 将filepath对应的文件读到传进来的std::string里
         int ReadFile(StringArg filepath, int maxSize, std::string& content, int64_t* fileSize = nullptr, int64_t* modifyTime = nullptr, int64_t* createTime = nullptr);
         int FdDirFilter(const struct dirent* d);
 
@@ -278,7 +278,7 @@ namespace kurisu {
 
         int ScanDir(const char* dirpath, int (*filter)(const struct dirent*));
 
-        //生成errno的str
+        // 生成errno的str
         const char* strerror_tl(int savedErrno);
 
         class LogFileAppender : uncopyable {
@@ -294,7 +294,7 @@ namespace kurisu {
 
         private:
             FILE* m_fp;
-            char m_buf[64 * 1024];  //正常情况下日志先写进这里,满了或者flush才往内核缓冲区写,减少系统调用
+            char m_buf[64 * 1024];  // 正常情况下日志先写进这里,满了或者flush才往内核缓冲区写,减少系统调用
             uint64_t m_writtenBytes = 0;
         };
 
@@ -332,15 +332,15 @@ namespace kurisu {
         public:
             explicit ThreadPool(const std::string& name = "ThreadPool") : m_name(name) {}
             ~ThreadPool();
-            //这个函数的调用必须在SetThrdNum前，用于设置等待队列的大小
+            // 这个函数的调用必须在SetThrdNum前，用于设置等待队列的大小
             void SetMaxQueueSize(int maxSize) { m_maxSize = maxSize; }
-            //设置线程池的大小
+            // 设置线程池的大小
             void SetThrdNum(int thrdNum);
-            //设置创建线程池时会调用的初始化函数
+            // 设置创建线程池时会调用的初始化函数
             void SetThreadInitCallback(const std::function<void()>& callback) { m_thrdInitCallBack = callback; }
 
             void Stop();
-            //在线程池内执行该函数
+            // 在线程池内执行该函数
             void Run(std::function<void()> func);
             void Join();
 
@@ -348,15 +348,15 @@ namespace kurisu {
             uint64_t Size() const;
 
         private:
-            //线程不安全，这个函数必须在m_mu已被锁上时才能调用
-            //当 m_maxSize == 0时恒为不满
+            // 线程不安全，这个函数必须在m_mu已被锁上时才能调用
+            // 当 m_maxSize == 0时恒为不满
             bool Full() const;
-            //线程池在这个函数中循环
+            // 线程池在这个函数中循环
             void Handle();
             std::function<void()> Take();
 
         private:
-            std::atomic_bool m_isRunning = 0;  //退出的标志
+            std::atomic_bool m_isRunning = 0;  // 退出的标志
             uint64_t m_maxSize = 0;
             std::string m_name;
             mutable std::mutex m_mu;
@@ -402,7 +402,7 @@ namespace kurisu {
 
         private:
             FixedBuf m_buf;
-            static const int k_MaxSize = 32;  //除const char* std::strubg std::string_view之外，一次能写入的最大字节数
+            static const int k_MaxSize = 32;  // 除const char* std::strubg std::string_view之外，一次能写入的最大字节数
         };
 
         template <class T>
@@ -452,17 +452,17 @@ namespace kurisu {
             void FormatTime();
             void Finish();
 
-            Timestamp m_time;  //要格式化的时间戳
+            Timestamp m_time;  // 要格式化的时间戳
             detail::LogStream m_strm;
-            LogLevel m_level;         //要格式化的日志等级
-            int m_line;               //要格式化的行号
-            const char* m_fileName;   //要格式化的日志名
-            uint64_t m_fileNameSize;  //日志名的长度
+            LogLevel m_level;         // 要格式化的日志等级
+            int m_line;               // 要格式化的行号
+            const char* m_fileName;   // 要格式化的日志名
+            uint64_t m_fileNameSize;  // 日志名的长度
         };
 
     private:
-        static bool s_isLocalTimeZone;  //日志是否采用本地时区
-        Formatter m_fmt;                //要格式器
+        static bool s_isLocalTimeZone;  // 日志是否采用本地时区
+        Formatter m_fmt;                // 要格式器
     };
 
     namespace detail {
@@ -513,17 +513,17 @@ namespace kurisu {
 
         const std::string m_filename;
         const uint64_t k_RollSize;  //   多少byte就roll一次
-        const int k_FlushInterval;  //多少秒就flush一次
-        const int k_CheckEveryN;    //每写入N次就强制检查一次，与m_count配合使用
+        const int k_FlushInterval;  // 多少秒就flush一次
+        const int k_CheckEveryN;    // 每写入N次就强制检查一次，与m_count配合使用
 
-        bool m_isLocalTimeZone;  //是否使用本地时区
-        int m_count = 0;         //记录被写入的次数，与k_CheckEveryN配合使用
-        time_t m_day;            //第几天
-        time_t m_lastRoll = 0;   //上次roll的时间
-        time_t m_lastFlush = 0;  //上次flush的时间
+        bool m_isLocalTimeZone;  // 是否使用本地时区
+        int m_count = 0;         // 记录被写入的次数，与k_CheckEveryN配合使用
+        time_t m_day;            // 第几天
+        time_t m_lastRoll = 0;   // 上次roll的时间
+        time_t m_lastFlush = 0;  // 上次flush的时间
         std::unique_ptr<std::mutex> m_mu;
         std::unique_ptr<detail::LogFileAppender> m_appender;
-        static const int k_OneDaySeconds = 60 * 60 * 24;  //一天有多少秒
+        static const int k_OneDaySeconds = 60 * 60 * 24;  // 一天有多少秒
     };
 
     class AsyncLogFile : detail::uncopyable {
@@ -538,22 +538,22 @@ namespace kurisu {
         using FixedBuf = detail::FixedBuffer<detail::k_LargeBuf>;
         using BufVector = std::vector<std::unique_ptr<FixedBuf>>;
         using BufPtr = BufVector::value_type;
-        //m_thrd在此函数内循环
+        // m_thrd在此函数内循环
         void Handle();
 
     private:
-        const int k_flushInterval;             //多少秒就flush一次
-        bool m_isLocalTimeZone;                //是否使用本地时区
-        std::atomic_bool m_isRunning = false;  //是否已运行
+        const int k_flushInterval;             // 多少秒就flush一次
+        bool m_isLocalTimeZone;                // 是否使用本地时区
+        std::atomic_bool m_isRunning = false;  // 是否已运行
         const std::string m_fileName;
         const int64_t m_rollSize;  //  多少byte就roll一次
         detail::Thread m_thrd;
         detail::CountDownLatch m_latch = detail::CountDownLatch(1);
         std::mutex m_mu;
-        std::condition_variable m_fullCond;  //前端的buf是否已满
-        BufPtr m_thisBuf;                    //前端用的buf
-        BufPtr m_nextBuf;                    //前端的备用buf
-        BufVector m_bufs;                    //后端用的buf
+        std::condition_variable m_fullCond;  // 前端的buf是否已满
+        BufPtr m_thisBuf;                    // 前端用的buf
+        BufPtr m_nextBuf;                    // 前端的备用buf
+        BufVector m_bufs;                    // 后端用的buf
     };
 
 
@@ -676,9 +676,9 @@ namespace kurisu {
             void Run() const { m_callback(); }
             void Restart()
             {
-                //如果是重复的定时器
+                // 如果是重复的定时器
                 if (m_isRepeat)
-                    m_runtime = Timestamp::AddTime(m_runtime, m_interval);  //重新计算下一个超时时刻
+                    m_runtime = Timestamp::AddTime(m_runtime, m_interval);  // 重新计算下一个超时时刻
                 else
                     m_runtime = Timestamp::Invalid();
             }
@@ -689,10 +689,10 @@ namespace kurisu {
 
 
         private:
-            Timestamp m_runtime;                     //超时的时刻(理想状态下回调函数运行的时刻)
-            const double m_interval;                 //触发超时的间隔,为0则代表是一次性定时器
-            const bool m_isRepeat;                   //是否重复
-            const std::function<void()> m_callback;  //定时器回调函数
+            Timestamp m_runtime;                     // 超时的时刻(理想状态下回调函数运行的时刻)
+            const double m_interval;                 // 触发超时的间隔,为0则代表是一次性定时器
+            const bool m_isRepeat;                   // 是否重复
+            const std::function<void()> m_callback;  // 定时器回调函数
         };
 
 
@@ -721,84 +721,84 @@ namespace kurisu {
         EventLoop();
         ~EventLoop();
         void Loop();
-        //可以跨线程调用，如果在其他线程调用，会调用wakeup保证退出
+        // 可以跨线程调用，如果在其他线程调用，会调用wakeup保证退出
         void Quit();
         Timestamp GetReturnTime() const { return m_returnTime; }
         int64_t GetLoopNum() const { return m_loopNum; }
-        //在EventLoop所属的线程中执行此函数
+        // 在EventLoop所属的线程中执行此函数
         void Run(std::function<void()> callback);
-        //注册只执行一次的额外任务
+        // 注册只执行一次的额外任务
         void AddTask(std::function<void()> callback);
-        //某时刻触发Timer
+        // 某时刻触发Timer
         TimerID RunAt(Timestamp time, std::function<void()> callback);
-        //多久后触发Timer,单位second
+        // 多久后触发Timer,单位second
         TimerID RunAfter(double delay, std::function<void()> callback);
-        //每隔多久触发Timer,单位second
+        // 每隔多久触发Timer,单位second
         TimerID RunEvery(double interval, std::function<void()> callback);
-        //取消定时器
+        // 取消定时器
         void Cancel(TimerID timerID);
 
         uint64_t GetTasksNum() const;
-        //唤醒阻塞在poll的loop
+        // 唤醒阻塞在poll的loop
         void Wakeup();
-        //注册channel到poller的map中
+        // 注册channel到poller的map中
         void UpdateChannel(detail::Channel* channel);
-        //从poller的map中移除channel
+        // 从poller的map中移除channel
         void RemoveChannel(detail::Channel* channel);
-        //m_poller中是否有channel
+        // m_poller中是否有channel
         bool HasChannel(detail::Channel* channel);
         pid_t GetThreadID() const { return m_threadID; }
-        //断言此线程是相应的IO线程
+        // 断言此线程是相应的IO线程
         void AssertInLoopThread();
-        //此线程是否是相应的IO线程
+        // 此线程是否是相应的IO线程
         bool InLoopThread() const { return m_threadID == this_thrd::Tid(); }
-        //是否正在调用回调函数
+        // 是否正在调用回调函数
         bool IsRunningCallback() const { return m_isRunningCallback; }
-        //将此TcpConnection加入到ShutdownTimingWheel中
+        // 将此TcpConnection加入到ShutdownTimingWheel中
         void AddShutdown(const std::shared_ptr<TcpConnection>& conn);
-        //更新此TcpConnection,以防ShutdownTimingWheelTimingWheel时间到调用Shutdown
+        // 更新此TcpConnection,以防ShutdownTimingWheelTimingWheel时间到调用Shutdown
         void UpdateShutdown(const std::shared_ptr<TcpConnection>& conn);
 
         void AddHeartbeat(const std::shared_ptr<TcpConnection>& conn);
 
         void SetShutdownTimingWheel(int interval) { m_shutdownInterval = interval; }
         void SetHeartbeatTimingWheel(int interval) { m_heartbeatInterval = interval; }
-        //获取此线程的EventLoop
+        // 获取此线程的EventLoop
         static EventLoop* GetLoopOfThisThread();
 
     private:
         void WakeUpRead();
         void RunTasks();
 
-        //DEBUG用的,打印每个事件
+        // DEBUG用的,打印每个事件
         void PrintActiveChannels() const;
 
-        bool m_isLooping = false;           //线程是否调用了Loop()
-        bool m_isRunningCallback = false;   //线程是否正在执行回调函数
+        bool m_isLooping = false;           // 线程是否调用了Loop()
+        bool m_isRunningCallback = false;   // 线程是否正在执行回调函数
         bool m_isRunningTasks = false;      //  EventLoop线程是否正在执行的额外任务
-        std::atomic_bool m_isQuit = false;  //线程是否调用了Quit()
-        int m_wakeUpfd;                     //一个eventfd   用于唤醒阻塞在Poll的Loop
+        std::atomic_bool m_isQuit = false;  // 线程是否调用了Quit()
+        int m_wakeUpfd;                     // 一个eventfd   用于唤醒阻塞在Poll的Loop
         int m_shutdownInterval = 0;
         int m_heartbeatInterval = 0;
         const pid_t m_threadID;
-        detail::Channel* m_thisActiveChannel = nullptr;  //当前正在执行哪个channel的回调函数
-        int64_t m_loopNum = 0;                           //Loop总循环次数
-        Timestamp m_returnTime;                          //有事件到来时返回的时间戳
+        detail::Channel* m_thisActiveChannel = nullptr;  // 当前正在执行哪个channel的回调函数
+        int64_t m_loopNum = 0;                           // Loop总循环次数
+        Timestamp m_returnTime;                          // 有事件到来时返回的时间戳
         std::unique_ptr<detail::Poller> m_poller;
-        std::unique_ptr<detail::TimerQueue> timerQueue_;   //Timer队列
-        std::unique_ptr<detail::Channel> m_wakeUpChannel;  //用于唤醒后的回调函数
+        std::unique_ptr<detail::TimerQueue> timerQueue_;   // Timer队列
+        std::unique_ptr<detail::Channel> m_wakeUpChannel;  // 用于唤醒后的回调函数
         std::unique_ptr<detail::ShutdownTimingWheel> m_shutdownTimingWheel;
         std::unique_ptr<detail::HeartbeatTimingWheel> m_heartbeatTimingWheel;
         std::vector<detail::Channel*> m_activeChannels;  // 保存所有有事件到来的channel
 
-        //EventLoop线程每次轮询除了执行有事件到来的channel的回调函数外，也会执行这个vector内的函数（额外的任务）
+        // EventLoop线程每次轮询除了执行有事件到来的channel的回调函数外，也会执行这个vector内的函数（额外的任务）
         std::vector<std::function<void()>> m_waitingTasks;
         std::vector<std::function<void()>> m_runningTasks;
-        mutable std::mutex m_mu;  //保护Tasks
+        mutable std::mutex m_mu;  // 保护Tasks
     };
 
     namespace detail {
-        //当前线程EventLoop对象指针
+        // 当前线程EventLoop对象指针
 
         int CreateEventfd();
         void ReadTimerfd(int timerfd, Timestamp now);
@@ -857,103 +857,103 @@ namespace kurisu {
         class Channel : uncopyable {
         public:
             Channel(EventLoop* loop, int fd) : m_fd(fd), m_loop(loop) {}
-            //处理事件
+            // 处理事件
             void RunCallback(Timestamp timestamp);
-            //设置可读事件回调函数
+            // 设置可读事件回调函数
             void SetReadCallback(std::function<void(Timestamp)> callback) { m_readCallback = std::move(callback); }
-            //设置可写事件回调函数
+            // 设置可写事件回调函数
             void SetWriteCallback(std::function<void()> callback) { m_writeCallback = std::move(callback); }
-            //设置关闭事件回调函数
+            // 设置关闭事件回调函数
             void SetCloseCallback(std::function<void()> callback) { m_closeCallback = std::move(callback); }
-            //设置错误事件回调函数
+            // 设置错误事件回调函数
             void SetErrorCallback(std::function<void()> callback) { m_errorCallback = std::move(callback); }
 
-            //用于延长某些对象的生命期,使其寿命与obj相同
+            // 用于延长某些对象的生命期,使其寿命与obj相同
             void Tie(const std::shared_ptr<void>&);
             int fd() const { return m_fd; }
-            //返回注册的事件
+            // 返回注册的事件
             int GetEvents() const { return m_events; }
-            //设置就绪的事件
+            // 设置就绪的事件
             void SetRevents(int revents) { m_revents = revents; }
 
-            //是否未注册事件
+            // 是否未注册事件
             bool IsNoneEvent() const { return m_events == k_NoneEvent; }
 
-            //注册可读事件
+            // 注册可读事件
             void OnReading();
-            //注销读事件
+            // 注销读事件
             void OffReading();
-            //注册写事件
+            // 注册写事件
             void OnWriting();
-            //注销写事件
+            // 注销写事件
             void OffWriting();
-            //注销所有事件
+            // 注销所有事件
             void OffAll();
-            //是否已注册可读事件
+            // 是否已注册可读事件
             bool IsReading() const { return m_events & k_ReadEvent; }
-            //是否已注册写事件
+            // 是否已注册写事件
             bool IsWriting() const { return m_events & k_WriteEvent; }
-            //New=-1   Added=1   Deleted=2
+            // New=-1   Added=1   Deleted=2
             int GetStatus() { return m_status; }
-            //New=-1   Added=1   Deleted=2
+            // New=-1   Added=1   Deleted=2
             void SetStatus(int status) { m_status = status; }
 
-            //DEBUG 用
+            // DEBUG 用
             std::string ReventsString() const { return EventsToString(m_fd, m_revents); }
-            //DEBUG 用
+            // DEBUG 用
             std::string EventsString() const { return EventsToString(m_fd, m_events); }
 
-            //是否生成EPOLLHUP事件的日志
+            // 是否生成EPOLLHUP事件的日志
             void OnLogHup() { m_logHup = true; }
-            //是否生成EPOLLHUP事件的日志
+            // 是否生成EPOLLHUP事件的日志
             void OffLogHup() { m_logHup = false; }
-            //返回所属的EventLoop
+            // 返回所属的EventLoop
             EventLoop* GetLoop() { return m_loop; }
-            //暂时离开所属的EventLoop
+            // 暂时离开所属的EventLoop
             void Remove();
 
         private:
             static std::string EventsToString(int fd, int ev);
-            //加入所属的EventLoop
+            // 加入所属的EventLoop
             void Update();
-            //处理到来的事件
+            // 处理到来的事件
             void RunCallbackWithGuard(Timestamp timestamp);
 
-            static const int k_NoneEvent = 0;                   //无事件
-            static const int k_ReadEvent = EPOLLIN | EPOLLPRI;  //可读
-            static const int k_WriteEvent = EPOLLOUT;           //可写
+            static const int k_NoneEvent = 0;                   // 无事件
+            static const int k_ReadEvent = EPOLLIN | EPOLLPRI;  // 可读
+            static const int k_WriteEvent = EPOLLOUT;           // 可写
 
-            bool m_isTied = false;             //  是否将生命周期绑定到了外部s
-            bool m_isRunningCallback = false;  //是否处于处理事件中
-            bool m_isInLoop = false;           //是否已在EventLoop里注册
-            bool m_logHup = true;              //EPOLLHUP时是否生成日志
+            bool m_isTied = false;             //  是否将生命周期绑定到了外部，使生命周期与外部对象相同
+            bool m_isRunningCallback = false;  // 是否处于处理事件中
+            bool m_isInLoop = false;           // 是否已在EventLoop里注册
+            bool m_logHup = true;              // EPOLLHUP时是否生成日志
 
-            const int m_fd;     //此channel负责管理的文件描述符
-            int m_events = 0;   //注册的事件
-            int m_revents = 0;  //被poller设置的就绪的事件
-            int m_status = -1;  //在poller中的状态
-            EventLoop* m_loop;  //指向此channel所属的EventLoop
+            const int m_fd;     // 此channel负责管理的文件描述符
+            int m_events = 0;   // 注册的事件
+            int m_revents = 0;  // 被poller设置的就绪的事件
+            int m_status = -1;  // 在poller中的状态
+            EventLoop* m_loop;  // 指向此channel所属的EventLoop
 
-            std::weak_ptr<void> m_tie;                      //用来绑定obj以修改生命周期
-            std::function<void(Timestamp)> m_readCallback;  //读事件回调函数
-            std::function<void()> m_writeCallback;          //写事件回调函数
-            std::function<void()> m_closeCallback;          //关闭事件回调函数
-            std::function<void()> m_errorCallback;          //错误事件回调函数
+            std::weak_ptr<void> m_tie;                      // 用来绑定obj以修改生命周期
+            std::function<void(Timestamp)> m_readCallback;  // 读事件回调函数
+            std::function<void()> m_writeCallback;          // 写事件回调函数
+            std::function<void()> m_closeCallback;          // 关闭事件回调函数
+            std::function<void()> m_errorCallback;          // 错误事件回调函数
         };
 
         class Poller : uncopyable {
         public:
             Poller(EventLoop* loop) : m_epollfd(epoll_create1(EPOLL_CLOEXEC)), m_loop(loop), m_events(k_InitEventListSize) {}
             ~Poller() = default;
-            //对epoll_wait的封装,返回时间戳
+            // 对epoll_wait的封装,返回时间戳
             Timestamp Poll(int timeoutMs, std::vector<Channel*>* activeChannels);
-            //添加channel
+            // 添加channel
             void UpdateChannel(Channel* channel);
-            //移除channel
+            // 移除channel
             void RemoveChannel(Channel* channel);
-            //这个channel是否在ChannelMap中
+            // 这个channel是否在ChannelMap中
             bool HasChannel(Channel* channel) const;
-            //断言此线程是相应的IO线程
+            // 断言此线程是相应的IO线程
             void AssertInLoopThread() const { m_loop->AssertInLoopThread(); }
 
 
@@ -962,16 +962,16 @@ namespace kurisu {
             static const int k_New = -1;
             static const int k_Added = 1;
             static const int k_Deleted = 2;
-            static const int k_InitEventListSize = 16;  //epoll事件表的大小
+            static const int k_InitEventListSize = 16;  // epoll事件表的大小
 
             static const char* OperationString(int operatoin);
-            //注册事件,由operation决定
+            // 注册事件,由operation决定
             void Update(int operation, Channel* channel);
 
             int m_epollfd;
-            EventLoop* m_loop;                   //指向所属的EventLoop
-            std::vector<epoll_event> m_events;   //epoll事件数组
-            std::map<int, Channel*> m_channels;  //存储channel的map
+            EventLoop* m_loop;                   // 指向所属的EventLoop
+            std::vector<epoll_event> m_events;   // epoll事件数组
+            std::map<int, Channel*> m_channels;  // 存储channel的map
         };
 
         class TimerQueue : uncopyable {
@@ -983,30 +983,30 @@ namespace kurisu {
         public:
             explicit TimerQueue(EventLoop* loop);
             ~TimerQueue();
-            //可以跨线程调用
+            // 可以跨线程调用
             TimerID Add(std::function<void()> callback, Timestamp when, double interval);
-            //可以跨线程调用
+            // 可以跨线程调用
             void Cancel(TimerID id) { m_loop->Run(std::bind(&TimerQueue::CancelInLoop, this, id)); }
 
         private:
-            //以下成员函数只可能在TimerQueue所属的IO线程调用，因而不用加锁
+            // 以下成员函数只可能在TimerQueue所属的IO线程调用，因而不用加锁
 
             void AddInLoop(detail::Timer* timer);
             void CancelInLoop(TimerID timerID);
 
-            //当Timer触发超时时回调此函数
+            // 当Timer触发超时时回调此函数
             void Handle();
-            //返回超时的Timer
+            // 返回超时的Timer
             TimeoutTimer GetTimeout(Timestamp now);
-            //重置非一次性的Timer
+            // 重置非一次性的Timer
             void Reset(TimeoutTimer& timeout);
-            //向TimerMap中插入timer
+            // 向TimerMap中插入timer
             bool Insert(detail::Timer* timer);
 
             bool m_isRunningCallback = false;
             const int m_timerfd;
-            EventLoop* m_loop;                     //TimerQueue所属的EventLoop
-            std::vector<TimerID> m_cancelledSoon;  //即将被cancel的timer
+            EventLoop* m_loop;                     // TimerQueue所属的EventLoop
+            std::vector<TimerID> m_cancelledSoon;  // 即将被cancel的timer
             TimerMap m_timers;
             Channel m_timerfdChannel;
         };
@@ -1023,7 +1023,7 @@ namespace kurisu {
             bool Listening() const { return m_isListening; }
 
         private:
-            //处理事件
+            // 处理事件
             void Handle();
 
             EventLoop* m_loop;
@@ -1031,7 +1031,7 @@ namespace kurisu {
             Channel m_channel;
             std::function<void(int sockfd, const SockAddr&)> m_connectionCallback;
             bool m_isListening;
-            int m_voidfd;  //空闲的fd,用于处理fd过多的情况
+            int m_voidfd;  // 空闲的fd,用于处理fd过多的情况
         };
 
 
@@ -1165,8 +1165,8 @@ namespace kurisu {
         void MakeSpace(uint64_t len);
 
     private:
-        uint64_t m_readIndex;   //从这里开始读
-        uint64_t m_writeIndex;  //从这里开始写
+        uint64_t m_readIndex;   // 从这里开始读
+        uint64_t m_writeIndex;  // 从这里开始写
         std::unique_ptr<Buf> m_buf;
 
         static const char k_CRLF[];
@@ -1185,7 +1185,7 @@ namespace kurisu {
         bool IsComplete(Buffer* buf)
         {
         again:
-            //length
+            // length
             if (auto readable = buf->ReadableBytes(); readable >= (uint64_t)(m_lengthFieldLength + m_lengthFieldOffset))
             {
                 uint64_t bodyLen = 0;
@@ -1201,10 +1201,10 @@ namespace kurisu {
 
                 uint64_t msgLen = m_lengthFieldOffset + m_lengthFieldLength + m_lengthAdjustment + bodyLen;
 
-                //body
+                // body
                 if (readable - m_lengthFieldLength - m_lengthFieldOffset < bodyLen)
                     return false;
-                else if (msgLen > (uint64_t)m_maxFrameLength)  //太长了
+                else if (msgLen > (uint64_t)m_maxFrameLength)  // 太长了
                 {
                     buf->Discard(msgLen);
                     LOG_WARN << "msg was " << msgLen << " bytes,exceeds the maxFrameLength(" << m_maxFrameLength << ") you set,so the whole msg has been discarded";
@@ -1250,17 +1250,17 @@ namespace kurisu {
     public:
         TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const SockAddr& localAddr, const SockAddr& peerAddr);
         ~TcpConnection();
-        //获取所在的EventLoop
+        // 获取所在的EventLoop
         EventLoop* GetLoop() const { return m_loop; }
-        //获取名称
+        // 获取名称
         const std::string& Name() const { return m_name; }
-        //本地地址
+        // 本地地址
         const SockAddr& LocalAddr() const { return m_localAddr; }
-        //远端地址
+        // 远端地址
         const SockAddr& PeerAddr() const { return m_peerAddr; }
-        //是否已连接
+        // 是否已连接
         bool Connected() const { return m_status == k_Connected; }
-        //是否已断开连接
+        // 是否已断开连接
         bool Disconnected() const { return m_status == k_Disconnected; }
         // return true if success.
         bool GetTcpInfo(struct tcp_info* tcpi) const;
@@ -1270,26 +1270,26 @@ namespace kurisu {
         void Send(const void* data, int len) { Send(std::string_view((const char*)data, len)); }
         void Send(const std::string_view& msg);
         void Send(Buffer* buf);
-        //线程不安全,不能跨线程调用
+        // 线程不安全,不能跨线程调用
         void Shutdown();
 
         void ForceClose();
         void ForceCloseWithDelay(double seconds);
-        //设置TcpNoDelay
+        // 设置TcpNoDelay
         void SetTcpNoDelay(bool on) { m_socket->SetTcpNoDelay(on); }
 
         void StartRead() { m_loop->Run(std::bind(&TcpConnection::StartReadInLoop, this)); }
         void StopRead() { m_loop->Run(std::bind(&TcpConnection::StopReadInLoop, this)); }
-        //线程不安全
+        // 线程不安全
         bool IsReading() const { return m_isReading; }
-        //连接建立 销毁 产生关闭事件时 都会调用这个回调函数
+        // 连接建立 销毁 产生关闭事件时 都会调用这个回调函数
         void SetConnectionCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback) { m_connCallback = callback; }
-        //接收到数据之后会调用这个回调函数
+        // 接收到数据之后会调用这个回调函数
         void SetMessageCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)>& callback)
         {
             m_msgCallback = callback;
         }
-        //写操作完成时会调用这个回调函数
+        // 写操作完成时会调用这个回调函数
         void SetWriteCompleteCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
         {
             m_writeCompleteCallback = callback;
@@ -1303,9 +1303,9 @@ namespace kurisu {
             m_closeCallback = callback;
         }
 
-        //当TcpServer accept一个连接时会调用这个函数
+        // 当TcpServer accept一个连接时会调用这个函数
         void ConnectEstablished();
-        //当TcpServer remove一个连接或自身析构时会调用这个函数
+        // 当TcpServer remove一个连接或自身析构时会调用这个函数
         void ConnectDestroyed();
 
         void SetAny(std::any& any) { m_any = any; }
@@ -1337,19 +1337,19 @@ namespace kurisu {
         static const int k_Connected = 2;
         static const int k_Disconnecting = 3;
 
-        bool m_isReading;                        //是否正在read
-        bool m_isInShutdownTimingWheel = false;  //是否已在ShutdownTimingWheel中
-        std::atomic_int m_status;                //连接的状态
-        EventLoop* m_loop;                       //所属的EventLoop
+        bool m_isReading;                        // 是否正在read
+        bool m_isInShutdownTimingWheel = false;  // 是否已在ShutdownTimingWheel中
+        std::atomic_int m_status;                // 连接的状态
+        EventLoop* m_loop;                       // 所属的EventLoop
         std::unique_ptr<detail::Socket> m_socket;
         std::unique_ptr<detail::Channel> m_channel;
         LengthCodec m_decoder;
         Buffer m_inputBuf;
         Buffer m_outputBuf;
         std::any m_any;
-        const SockAddr m_localAddr;  //本地地址
-        const SockAddr m_peerAddr;   //对端地址
-        const std::string m_name;    //名称
+        const SockAddr m_localAddr;  // 本地地址
+        const SockAddr m_peerAddr;   // 对端地址
+        const std::string m_name;    // 名称
         std::function<void(const std::shared_ptr<TcpConnection>&)> m_connCallback;
         std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)> m_msgCallback;
         std::function<void(const std::shared_ptr<TcpConnection>&)> m_writeCompleteCallback;
@@ -1369,42 +1369,42 @@ namespace kurisu {
         const std::string& ipPort() const { return m_ipPort; }
         const std::string& Name() const { return m_name; }
         EventLoop* GetLoop() const { return m_loop; }
-        //must be called before Start
+        // must be called before Start
         void SetThreadNum(int num) { m_threadPool->SetThreadNum(num); }
-        //must be called before Start
+        // must be called before Start
         void SetThreadInitCallback(const std::function<void(EventLoop*)>& callback) { m_threadInitCallback = callback; }
-        //must be called before Start
+        // must be called before Start
         void SetTcpNoDelay(bool on) { m_isTcpNoDelay = on; }
-        //must be called before Start
+        // must be called before Start
         void SetShutdownInterval(int interval) { m_shutdownInterval = interval; }
-        //must be called before Start
+        // must be called before Start
         void SetHeartbeatInterval(int interval) { m_heartbeatInterval = interval; }
-        //must be called before Start
+        // must be called before Start
         void SetHeartbeatMsg(const void* data, int len);
 
-        //must be called before Start
-        //lengthFieldLength only supports 1/2/4/8
+        // must be called before Start
+        // lengthFieldLength only supports 1/2/4/8
         void SetLengthCodec(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip);
 
         // must be called after Start
         std::shared_ptr<detail::EventLoopThreadPool> GetThreadPool() { return m_threadPool; }
 
-        //start,thread safe
+        // start,thread safe
         void Start();
-        //must be called before Start
-        //set the callback when connection active
+        // must be called before Start
+        // set the callback when connection active
         void SetConnectionCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
         {
             m_connCallback = callback;
         }
-        //must be called before Start
-        //set the callback when msg arrive
+        // must be called before Start
+        // set the callback when msg arrive
         void SetMessageCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)>& callback)
         {
             m_msgCallback = callback;
         }
-        //must be called before Start
-        //set the callback when all msg write complete
+        // must be called before Start
+        // set the callback when all msg write complete
         void SetWriteCompleteCallback(const std::function<void(const std::shared_ptr<TcpConnection>&)>& callback)
         {
             m_writeCompleteCallback = callback;
@@ -1413,11 +1413,11 @@ namespace kurisu {
 
     private:
         using ConnectionMap = std::map<std::string, std::shared_ptr<TcpConnection>>;
-        //连接到来时会回调的函数
+        // 连接到来时会回调的函数
         void NewConnection(int sockfd, const SockAddr& peerAddr);
-        //将这个TcpConnection从map中删除,线程安全
+        // 将这个TcpConnection从map中删除,线程安全
         void RemoveConnection(const std::shared_ptr<TcpConnection>& conn);
-        //将这个TcpConnection从map中删除
+        // 将这个TcpConnection从map中删除
         void RemoveConnectionInLoop(const std::shared_ptr<TcpConnection>& conn);
 
     private:
@@ -1432,9 +1432,9 @@ namespace kurisu {
         LengthCodec m_decoder;
         const std::string m_ipPort;
         const std::string m_name;
-        std::function<void(const std::shared_ptr<TcpConnection>&)> m_connCallback;                     //连接到来执行的回调函数
-        std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)> m_msgCallback;  //消息到来执行的回调函数
-        std::function<void(const std::shared_ptr<TcpConnection>&)> m_writeCompleteCallback;            //写操作完成时执行的回调函数
+        std::function<void(const std::shared_ptr<TcpConnection>&)> m_connCallback;                     // 连接到来执行的回调函数
+        std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)> m_msgCallback;  // 消息到来执行的回调函数
+        std::function<void(const std::shared_ptr<TcpConnection>&)> m_writeCompleteCallback;            // 写操作完成时执行的回调函数
         std::function<void(EventLoop*)> m_threadInitCallback;
         ConnectionMap m_connections;
     };
@@ -1457,7 +1457,7 @@ namespace kurisu {
             };
 
         public:
-            //second
+            // second
             ShutdownTimingWheel(EventLoop* loop, int interval)
             {
                 loop->RunEvery(1.0, [this, interval] {
@@ -1502,7 +1502,7 @@ namespace kurisu {
                 static std::unique_ptr<char> m_msg;
             };
 
-            //second
+            // second
             HeartbeatTimingWheel(EventLoop* loop, int interval) : m_buckets(interval)
             {
                 loop->RunEvery(1.0, std::bind(&HeartbeatTimingWheel::OnTimer, this));
@@ -1518,7 +1518,7 @@ namespace kurisu {
                 // LOG_INFO << "Heartbeat:" << m_index - 1 << ":" << list.size();
                 if (m_index >= (int)m_buckets.size())
                     m_index = 0;
-                auto it = list.rbegin();  //从后往前遍历,减少删除时的拷贝
+                auto it = list.rbegin();  // 从后往前遍历,减少删除时的拷贝
                 while (it != list.rend())
                 {
                     if (auto conn = it->lock(); conn)
@@ -1532,7 +1532,7 @@ namespace kurisu {
             }
 
         private:
-            //TODO  试了一下,在即使删中间vector还是比list快,更何况list遍历还慢,先观察
+            // TODO  试了一下,在即使删中间vector还是比list快,更何况list遍历还慢,先观察
             using Bucket = std::vector<std::weak_ptr<TcpConnection>>;
             int m_index = 0;
             std::vector<Bucket> m_buckets;
