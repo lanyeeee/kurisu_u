@@ -2349,6 +2349,7 @@ namespace kurisu {
                 // 否则放到loop待执行回调队列执行,会发生拷贝
                 m_loop->AddTask(std::bind(&TcpConnection::SendStringView, this, msg));
         }
+        // 由此保证了Send是线程安全的
     }
     void TcpConnection::Send(const std::string_view& msg)
     {
@@ -2360,6 +2361,7 @@ namespace kurisu {
                 // 否则放到loop待执行回调队列执行,会发生拷贝
                 m_loop->AddTask(std::bind(&TcpConnection::SendStringView, this, std::string(msg)));
         }
+        // 由此保证了Send是线程安全的
     }
     void TcpConnection::Send(Buffer* buf)
     {
@@ -2374,6 +2376,7 @@ namespace kurisu {
                 // 否则放到loop待执行回调队列执行,会发生拷贝
                 m_loop->AddTask(std::bind(&TcpConnection::SendStringView, this, buf->RetrieveAllAsString()));
         }
+        // 由此保证了Send是线程安全的
     }
     void TcpConnection::Shutdown()
     {
@@ -2488,7 +2491,7 @@ namespace kurisu {
         std::shared_ptr<TcpConnection> guard = shared_from_this();
         // 此时当前的TcpConnection的引用计数为3
         // 1.guard  2.在TcpServer的map中 3.在Channel的tie中(保证Channel回调时TcpConnection还活着)
-
+        // 这么做是为了保证执行callback时TcpConnection不会提前析构
         m_connCallback(guard);
         m_closeCallback(guard);
     }
@@ -2667,16 +2670,18 @@ namespace kurisu {
         conn->SetCloseCallback(std::bind(&TcpServer::RemoveConnection, this, std::placeholders::_1));
         conn->SetTcpNoDelay(m_isTcpNoDelay);
         conn->SetLengthCodec(&m_decoder);
-        if (m_heartbeatInterval != 0)
+        if (m_heartbeatInterval > 0)
             ioLoop->AddHeartbeat(conn);
+        // 没有在这里将连接加入ShutdownTimerWheel是因为不一定每条连接都需要被ShutdownTimerWheel接管
         ioLoop->Run(std::bind(&TcpConnection::ConnectEstablished, std::ref(conn)));
     }
     void TcpServer::RemoveConnection(const std::shared_ptr<TcpConnection>& conn)
     {
         // FIXME 不安全
-        // 因为调用TcpServer::removeConnection的线程是TcpConnection所在的EventLoop
-        // 也就是说TcpServer的this指针暴露在TcpConnection所在的EventLoop了
-        // 如果这个EventLoop对这个this指针做修改,就可能会导致TcpServer出错
+        // 因为调用TcpServer::RemoveConnection的线程是TcpConnection所在的EventLoop
+        // 因为TcpServer::RemoveConnection是TcpConnection的closeCallback
+        // 也就是说此时执行这个函数的线程是TcpConnection的EventLoop所在的线程
+        // 如果此时修改TcpServer里的东西,就可能会导致TcpServer出错，例如执行m_nextConnID++
         // 所以理论上是不安全的,但其实并没有修改,而是立刻进入到TcpServer的EventLoop,所以其实是安全的
         // 硬要说不安全,只有下面这一句话理论上不安全(其实也安全),其他全都是安全的
         m_loop->Run(std::bind(&TcpServer::RemoveConnectionInLoop, this, conn));

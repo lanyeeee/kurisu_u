@@ -1448,6 +1448,8 @@ namespace kurisu {
 
                 ~Entry()
                 {
+                    // 比较温和的做法，只是将TcpConnection的状态改为Disconnect，然后禁止写Tcp缓冲区
+                    // 不会马上触发ConnCallback
                     if (auto conn = m_weak.lock(); conn)
                         conn->Shutdown();
                 }
@@ -1521,12 +1523,12 @@ namespace kurisu {
                 auto it = list.rbegin();  // 从后往前遍历,减少删除时的拷贝
                 while (it != list.rend())
                 {
-                    if (auto conn = it->lock(); conn)
+                    if (auto conn = it->lock(); conn)  // 还活着就发
                     {
                         conn->Send(Msg::data(), Msg::len());
                         ++it;
                     }
-                    else
+                    else  // 死了就删
                         list.erase((++it).base());
                 }
             }
