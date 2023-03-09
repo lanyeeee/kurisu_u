@@ -1,4 +1,4 @@
-# 1.The simplest echo server
+# 1.The simplest Echo Server
 ## `example.cpp`
 ```cpp
 #include <kurisu/kurisu.h>
@@ -27,7 +27,7 @@ $ g++ ./example.cpp -o example -std=c++17 -pthread -lkurisu
 ```
 Then the echo server will listen port 5005   
 
-# 2.`Multi-thread` echo server
+# 2.`Multi-thread` Echo Server
 ```cpp
 #include <kurisu/kurisu.h>
 
@@ -57,8 +57,8 @@ int main()
 }
 ```
 
-# 3.Echo server with `LengthCodec`   
-very similar to  [netty](https://github.com/netty/netty)'s `LengthFieldBasedFrameDecoder`   
+# 3.Echo Server with `LengthCodec`   
+It's used much like [netty](https://github.com/netty/netty)'s `LengthFieldBasedFrameDecoder`   
 This ensures that every callback has a complete msg in the buffer
 ```cpp  
 #include <kurisu/kurisu.h>
@@ -83,7 +83,7 @@ int main()
     loop.Loop();
 }
 ```
-# 4.Echo server with `LengthCodec` and `Heartbeat`   
+# 4.Echo Server with `LengthCodec` and `Heartbeat`   
 ```cpp
 #include <kurisu/kurisu.h>
 
@@ -113,7 +113,8 @@ int main()
 }
 
 ```  
-# 5.Echo server with `LengthCodec`,`Heartbeat`,`ShutdownTimingWheel`
+# 5.Echo server with `LengthCodec`,`Heartbeat`,`ShutdownTimingWheel`  
+If a connection in **ShundownTimingWheel** does not send any msg within the `interval` you set, it will be **forcibly closed**
 ```cpp
 #include <kurisu/kurisu.h>
 
@@ -123,22 +124,32 @@ void OnMsg(const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* b
     conn->Send(buf);
 }
 
+void OnConn(const std::shared_ptr<kurisu::TcpConnection>& conn)
+{
+    // If you want this connection to be added to the ShutdownTimingWheel
+    // you need to call the AddToShutdownTimingWheel()
+
+    // in this example all connections added
+    if (conn->Connected())
+        conn->AddToShutdownTimingWheel();
+}
 int main()
 {
     kurisu::EventLoop loop;
     kurisu::TcpServer server(&loop, kurisu::SockAddr(5005), "echo");
 
     server.SetMessageCallback(OnMsg);
+    server.SetConnectionCallback(OnConn);
 
-    //very similar to  netty's LengthFieldBasedFrameDecoder
+    // very similar to  netty's LengthFieldBasedFrameDecoder
     server.SetLengthCodec(65535, 0, 4, 0, 0);
 
     std::string msg = "heartbeat";
-    //If you don't set it, the default msg is "\0\0\0\0",4 bytes total
+    // If you don't set it, the default msg is "\0\0\0\0",4 bytes total
     server.SetHeartbeatMsg(msg.data(), (int)msg.size());
-    server.SetHeartbeatInterval(5);  //Send heartbeat msg every 5 seconds.
+    server.SetHeartbeatInterval(5);  // Send heartbeat msg every 5 seconds.
 
-    //If no msg comes from the client for 15 seconds, disconnect the client.
+    // If no msg comes from the client for 15 seconds, it will be forcibly closed
     server.SetShutdownInterval(15);
 
     server.Start();
@@ -148,7 +159,7 @@ int main()
 
 
 
-# 6.Chat server with  `LengthCodec`,`Heartbeat`,`ShutdownTimingWheel`
+# 6.`Multi-thread` Chat Server with  `LengthCodec`,`Heartbeat`,`ShutdownTimingWheel`
 ```cpp
 #include <kurisu/kurisu.h>
 #include <set>
@@ -159,13 +170,16 @@ public:
         : m_server(loop, listenAddr, name, option)
     {
         using namespace std::placeholders;
+
+        m_server.SetThreadNum(4);
         m_server.SetLengthCodec(65535, 0, 4, 0, 0);
 
         std::string msg = "heartbeat";
         m_server.SetHeartbeatMsg(msg.data(), (int)msg.size());
         m_server.SetHeartbeatInterval(5);
 
-        m_server.SetShutdownInterval(15);
+        // If no msg comes from the client for 2 minutes, it will be forced to close
+        m_server.SetShutdownInterval(120);
 
         m_server.SetConnectionCallback(std::bind(&ChatServer::OnConn, this, _1));
         m_server.SetMessageCallback(std::bind(&ChatServer::OnMsg, this, _1, _2, _3));
@@ -176,23 +190,29 @@ public:
 private:
     void OnConn(const std::shared_ptr<kurisu::TcpConnection>& conn)
     {
+        std::lock_guard locker(m_connectionsMutex);  // std::set not thread safe
         if (conn->Connected())
-            m_connections.insert(conn);  //add to set
+        {
+            conn->AddToShutdownTimingWheel();  // add to ShutdownTimingWheel
+            m_connections.insert(conn);        // add to set
+        }
         else
-            m_connections.erase(conn);  //remove from set
+            m_connections.erase(conn);  // remove from set
     }
 
     void OnMsg(const std::shared_ptr<kurisu::TcpConnection>& conn, kurisu::Buffer* buf, kurisu::Timestamp)
     {
         LOG_INFO << "recv msg:" << buf->ToString();
-        for (auto&& it : m_connections)  //iterating the entire set
-            if (it != conn)              //if not itself
+        std::lock_guard locker(m_connectionsMutex);  // std::set not thread safe
+        for (auto&& it : m_connections)              // iterating the entire set
+            if (it != conn)                          // if not itself
                 it->Send(buf);
     }
 
 private:
     kurisu::TcpServer m_server;
     std::set<std::shared_ptr<kurisu::TcpConnection>> m_connections;
+    std::mutex m_connectionsMutex;
 };
 
 
