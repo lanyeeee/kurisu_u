@@ -5,7 +5,7 @@ project(kurisu)
 
 set(CMAKE_BUILD_TYPE "Release")
 set(LIBRARY_OUTPUT_PATH .)
-set(CMAKE_CXX_FLAGS "-pthread -std=gnu++17 -O3")
+set(CMAKE_CXX_FLAGS "-pthread -std=gnu++17 -O3 -Wall")
 
 
 aux_source_directory(src SRCKURISU)

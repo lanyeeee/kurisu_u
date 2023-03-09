@@ -2314,7 +2314,7 @@ namespace kurisu {
           m_lengthFieldOffset(lengthFieldOffset),
           m_lengthFieldLength(lengthFieldLength),
           m_lengthAdjustment(lengthAdjustment),
-          m_lengthFieldEndOffset(m_lengthFieldOffset + m_lengthFieldLength),
+          m_lengthFieldEndOffset(lengthFieldOffset + lengthFieldLength),
           m_initialBytesToStrip(initialBytesToStrip) {}
 
     bool LengthCodec::IsComplete(Buffer* buf)
@@ -2322,7 +2322,7 @@ namespace kurisu {
         int64_t frameLength = 0;
 
         // 如果当前可读字节还未达到长度长度域的偏移，那肯定不完整
-        if (buf->ReadableBytes() < m_lengthFieldEndOffset)
+        if ((int)buf->ReadableBytes() < m_lengthFieldEndOffset)
             return false;
 
         // 拿到报文体长度
@@ -2348,7 +2348,7 @@ namespace kurisu {
         // 前面是长度的校验，顺便拿到了帧的长度
 
         // 验证当前是否已经读到足够的字节
-        if (buf->ReadableBytes() < m_frameLengthInt)
+        if ((int)buf->ReadableBytes() < m_frameLengthInt)
             return false;
 
         // 跳过的字节不能大于数据包的长度
@@ -2370,7 +2370,7 @@ namespace kurisu {
 
     int64_t LengthCodec::PeekBodyLength(Buffer* buf)
     {
-        int64_t bodyLen;
+        int64_t bodyLen = -1;
         buf->ReadIndexRightShift(m_lengthFieldOffset);
         switch (m_lengthFieldLength)
         {
@@ -2523,7 +2523,7 @@ namespace kurisu {
                     }
                 }
                 // 出问题直接打印然后强制断开连接
-                catch (LengthCodec::LengthCodecException e)
+                catch (LengthCodec::LengthCodecException& e)
                 {
                     ForceCloseInLoop();
                     LOG_WARN << fmt::format("TcpConnection::HandleRead[{}] forced to close for LengthCodecException: {}", Name(), e.what());

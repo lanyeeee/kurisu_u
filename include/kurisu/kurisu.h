@@ -1209,12 +1209,12 @@ namespace kurisu {
         void DiscardingTooLongFrame(Buffer* buf);
 
     private:
-        int m_maxFrameLength = 65535;
-        int m_lengthFieldOffset = 0;
-        int m_lengthFieldLength = 0;
+        int m_maxFrameLength;
+        int m_lengthFieldOffset;
+        int m_lengthFieldLength;
+        int m_lengthAdjustment;
         int m_lengthFieldEndOffset;
-        int m_lengthAdjustment = 0;
-        int m_initialBytesToStrip = 0;
+        int m_initialBytesToStrip;
         int m_frameLengthInt;
         friend TcpConnection;
     };
