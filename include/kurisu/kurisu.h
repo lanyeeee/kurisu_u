@@ -786,7 +786,7 @@ namespace kurisu {
         Timestamp m_returnTime;                          // 有事件到来时返回的时间戳
         std::unique_ptr<detail::Poller> m_poller;
         std::unique_ptr<detail::TimerQueue> timerQueue_;   // Timer队列
-        std::unique_ptr<detail::Channel> m_wakeUpChannel;  // 用于唤醒后的回调函数
+        std::unique_ptr<detail::Channel> m_wakeUpChannel;  // 用于退出时唤醒loop
         std::unique_ptr<detail::ShutdownTimingWheel> m_shutdownTimingWheel;
         std::unique_ptr<detail::HeartbeatTimingWheel> m_heartbeatTimingWheel;
         std::vector<detail::Channel*> m_activeChannels;  // 保存所有有事件到来的channel
@@ -1070,7 +1070,7 @@ namespace kurisu {
     private:
         struct Buf {
             uint64_t len;
-            char* ptr[0];
+            char* ptr[0];  // 柔性数组成员，它将在运行时被分配大小
         };
 
     public:
@@ -1082,6 +1082,20 @@ namespace kurisu {
             m_buf = std::unique_ptr<Buf>((Buf*)operator new(sizeof(Buf) + k_PrependSize + initialSize));
             m_buf->len = k_PrependSize + initialSize;
         }
+
+        // 顺便把移动构造也实现了
+        Buffer(Buffer&& other) : m_readIndex(other.m_readIndex), m_writeIndex(other.m_writeIndex), m_buf(std::move(other.m_buf))
+        {
+        }
+
+        // 因为成员有unique_ptr，所以要手动实现拷贝构造
+        Buffer(const Buffer& other) : m_readIndex(other.m_readIndex), m_writeIndex(other.m_writeIndex)
+        {
+            m_buf = std::unique_ptr<Buf>((Buf*)operator new(sizeof(Buf) + other.m_buf->len));
+            m_buf->len = other.m_buf->len;
+            std::copy(other.m_buf->ptr, other.m_buf->ptr + other.m_buf->len, m_buf->ptr);
+        }
+
 
         void Swap(Buffer& other);
         void Resize(uint64_t size);
@@ -1164,6 +1178,8 @@ namespace kurisu {
         const char* Begin() const { return (const char*)m_buf->ptr; }
         void MakeSpace(uint64_t len);
 
+
+
     private:
         uint64_t m_readIndex;   // 从这里开始读
         uint64_t m_writeIndex;  // 从这里开始写
@@ -1174,75 +1190,32 @@ namespace kurisu {
 
     class LengthCodec : detail::copyable {
     public:
+        class LengthCodecException : public Exception {
+        public:
+            LengthCodecException(std::string msg) : Exception(std::move(msg)) {}
+        };
+
         LengthCodec() = default;
-        LengthCodec(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
-            : m_maxFrameLength(maxFrameLength),
-              m_lengthFieldOffset(lengthFieldOffset),
-              m_lengthFieldLength(lengthFieldLength),
-              m_lengthAdjustment(lengthAdjustment),
-              m_initialBytesToStrip(initialBytesToStrip) {}
+        LengthCodec(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip);
 
-        bool IsComplete(Buffer* buf)
-        {
-        again:
-            // length
-            if (auto readable = buf->ReadableBytes(); readable >= (uint64_t)(m_lengthFieldLength + m_lengthFieldOffset))
-            {
-                uint64_t bodyLen = 0;
-                buf->ReadIndexRightShift(m_lengthFieldOffset);
-                switch (m_lengthFieldLength)
-                {
-                    case 1: bodyLen = buf->PeekInt8(); break;
-                    case 2: bodyLen = buf->PeekInt16(); break;
-                    case 4: bodyLen = buf->PeekInt32(); break;
-                    case 8: bodyLen = buf->PeekInt64(); break;
-                }
-                buf->ReadIndexLeftShift(m_lengthFieldOffset);
+        bool IsComplete(Buffer* buf);
 
-                uint64_t msgLen = m_lengthFieldOffset + m_lengthFieldLength + m_lengthAdjustment + bodyLen;
+        Buffer Decode(Buffer* buf);
 
-                // body
-                if (readable - m_lengthFieldLength - m_lengthFieldOffset < bodyLen)
-                    return false;
-                else if (msgLen > (uint64_t)m_maxFrameLength)  // 太长了
-                {
-                    buf->Discard(msgLen);
-                    LOG_WARN << "msg was " << msgLen << " bytes,exceeds the maxFrameLength(" << m_maxFrameLength << ") you set,so the whole msg has been discarded";
-                    buf->Shrink(m_maxFrameLength);
-                    goto again;
-                }
-                else
-                    return true;
-            }
-            return false;
-        }
-
-        Buffer Decode(Buffer* buf)
-        {
-            uint64_t bodyLen = 0;
-            buf->ReadIndexRightShift(m_lengthFieldOffset);
-            switch (m_lengthFieldLength)
-            {
-                case 1: bodyLen = buf->PeekInt8(); break;
-                case 2: bodyLen = buf->PeekInt16(); break;
-                case 4: bodyLen = buf->PeekInt32(); break;
-                case 8: bodyLen = buf->PeekInt64(); break;
-            }
-            buf->ReadIndexLeftShift(m_lengthFieldOffset);
-
-            Buffer res(m_lengthFieldOffset + m_lengthFieldLength - m_initialBytesToStrip + bodyLen);
-            buf->Discard(m_initialBytesToStrip);
-            res.Append(buf->ReadIndex(), res.Size());
-            buf->Discard(res.Size());
-            return res;
-        }
+    private:
+        void Fail(int64_t frameLength);
+        void FailIfNecessary(bool firstDetectionOfTooLongFrame);
+        int64_t PeekBodyLength(Buffer* buf);
+        void DiscardingTooLongFrame(Buffer* buf);
 
     private:
         int m_maxFrameLength = 65535;
         int m_lengthFieldOffset = 0;
         int m_lengthFieldLength = 0;
+        int m_lengthFieldEndOffset;
         int m_lengthAdjustment = 0;
         int m_initialBytesToStrip = 0;
+        int m_frameLengthInt;
         friend TcpConnection;
     };
 
@@ -1270,9 +1243,9 @@ namespace kurisu {
         void Send(const void* data, int len) { Send(std::string_view((const char*)data, len)); }
         void Send(const std::string_view& msg);
         void Send(Buffer* buf);
-        // 线程不安全,不能跨线程调用
+        // 线程安全，muduo源码中的注释错了
         void Shutdown();
-
+        // 线程安全
         void ForceClose();
         void ForceCloseWithDelay(double seconds);
         // 设置TcpNoDelay
@@ -1448,10 +1421,10 @@ namespace kurisu {
 
                 ~Entry()
                 {
-                    // 比较温和的做法，只是将TcpConnection的状态改为Disconnect，然后禁止写Tcp缓冲区
-                    // 不会马上触发ConnCallback
+                    // 不调用Shutdown是因为，Shutdown是防止客户端的数据没有被读完
+                    // 而在这里肯定已经很久没消息了，所以直接强制关闭
                     if (auto conn = m_weak.lock(); conn)
-                        conn->Shutdown();
+                        conn->ForceClose();
                 }
 
             private:

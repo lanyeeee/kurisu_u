@@ -2083,6 +2083,7 @@ namespace kurisu {
     }
     void Buffer::Resize(uint64_t new_size)
     {
+        // 尝试扩大原来的内存，不行就开辟一片新的内存，并且把原来的数据拷贝过去
         m_buf = std::unique_ptr<Buf>((Buf*)realloc(m_buf.release(), sizeof(Buf) + k_PrependSize + new_size));
         m_buf->len = k_PrependSize + new_size;
     }
@@ -2222,7 +2223,7 @@ namespace kurisu {
     void Buffer::Prepend(const void* data, uint64_t len)
     {
         if (m_readIndex < len)
-            LOG_FATAL << "in Buffer::prepend   lack of PrependableBytes";
+            LOG_FATAL << "in Buffer::Prepend   lack of PrependableBytes";
         m_readIndex -= len;
         memcpy((char*)ReadIndex(), (const char*)data, len);
     }
@@ -2306,6 +2307,85 @@ namespace kurisu {
 
         return n;
     }
+
+
+    LengthCodec::LengthCodec(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
+        : m_maxFrameLength(maxFrameLength),
+          m_lengthFieldOffset(lengthFieldOffset),
+          m_lengthFieldLength(lengthFieldLength),
+          m_lengthAdjustment(lengthAdjustment),
+          m_lengthFieldEndOffset(m_lengthFieldOffset + m_lengthFieldLength),
+          m_initialBytesToStrip(initialBytesToStrip) {}
+
+    bool LengthCodec::IsComplete(Buffer* buf)
+    {
+        int64_t frameLength = 0;
+
+        // 如果当前可读字节还未达到长度长度域的偏移，那肯定不完整
+        if (buf->ReadableBytes() < m_lengthFieldEndOffset)
+            return false;
+
+        // 拿到报文体长度
+        int64_t bodyLen = PeekBodyLength(buf);
+
+        // 如果报文体的长度为负数，直接抛出异常
+        if (bodyLen < 0)
+            throw LengthCodecException(fmt::format("negative pre-adjustment length field: {}", bodyLen));
+
+        // 确定整个包的长度
+        frameLength = bodyLen + m_lengthAdjustment + m_lengthFieldEndOffset;
+
+        // 整个包的长度还没有长度域长，直接抛出异常
+        if (frameLength < m_lengthFieldEndOffset)
+            throw LengthCodecException(fmt::format("Adjusted frame length {} is less than lengthFieldEndOffset: {}", frameLength, m_lengthFieldEndOffset));
+
+        // 数据包长度超出最大包长度
+        if (frameLength > m_maxFrameLength)
+            throw LengthCodecException(fmt::format(
+                "Adjusted frame length exceeds {}: {}", m_maxFrameLength, frameLength));
+
+
+        // 前面是长度的校验，顺便拿到了帧的长度
+
+        // 验证当前是否已经读到足够的字节
+        if (buf->ReadableBytes() < m_frameLengthInt)
+            return false;
+
+        // 跳过的字节不能大于数据包的长度
+        if (m_initialBytesToStrip > frameLength)
+            throw LengthCodecException(fmt::format("Adjusted frame length ({}) is less than initialBytesToStrip: {}", frameLength, m_initialBytesToStrip));
+
+        m_frameLengthInt = (int)frameLength;  // 确定新的帧有多长
+        buf->Discard(m_initialBytesToStrip);
+        return true;
+    }
+
+    Buffer LengthCodec::Decode(Buffer* buf)
+    {
+        Buffer frame(m_frameLengthInt - m_initialBytesToStrip);
+        frame.Append(buf->ReadIndex(), frame.Size());
+        buf->Discard(frame.Size());
+        return frame;
+    }
+
+    int64_t LengthCodec::PeekBodyLength(Buffer* buf)
+    {
+        int64_t bodyLen;
+        buf->ReadIndexRightShift(m_lengthFieldOffset);
+        switch (m_lengthFieldLength)
+        {
+            case 1: bodyLen = buf->PeekInt8(); break;
+            case 2: bodyLen = buf->PeekInt16(); break;
+            case 4: bodyLen = buf->PeekInt32(); break;
+            case 8: bodyLen = buf->PeekInt64(); break;
+            default: LOG_FATAL << fmt::format("unsupported lengthFieldLength: {} (expected: 1, 2, 4, or 8)", m_lengthFieldLength);
+        }
+        buf->ReadIndexLeftShift(m_lengthFieldOffset);
+        return bodyLen;
+    }
+
+
+
 
 
 
@@ -2434,11 +2514,19 @@ namespace kurisu {
         {
             if (m_decoder.m_lengthFieldLength > 0)
             {
-                // 分到不能再分为止
-                while (m_decoder.IsComplete(&m_inputBuf))  // 如果inputBuf中的数据足以构成一个完整的包
+                try
                 {
-                    Buffer buf = m_decoder.Decode(&m_inputBuf);
-                    m_msgCallback(shared_from_this(), &buf, receiveTime);
+                    while (m_decoder.IsComplete(&m_inputBuf))  // 如果inputBuf中的数据足以构成一个完整的包
+                    {
+                        Buffer buf = m_decoder.Decode(&m_inputBuf);
+                        m_msgCallback(shared_from_this(), &buf, receiveTime);
+                    }
+                }
+                // 出问题直接打印然后强制断开连接
+                catch (LengthCodec::LengthCodecException e)
+                {
+                    ForceCloseInLoop();
+                    LOG_WARN << fmt::format("TcpConnection::HandleRead[{}] forced to close for LengthCodecException: {}", Name(), e.what());
                 }
             }
             else
