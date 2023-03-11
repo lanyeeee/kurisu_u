@@ -1053,9 +1053,13 @@ namespace kurisu {
 
     class Buffer : detail::copyable {
     private:
-        struct Buf {
-            uint64_t len;
-            char* ptr[0];  // 柔性数组成员，它将在运行时被分配大小
+        class Buf {
+        public:
+            char* ptr;
+            Buf(uint64_t len) : ptr((char*)malloc(len)) {}
+            // 尝试扩大原来的内存，不行就开辟一片新的内存，并且把原来的数据拷贝过去
+            void Resize(uint64_t newSize) { ptr = (char*)realloc(ptr, newSize); }
+            ~Buf() { delete[] ptr; }
         };
 
     public:
@@ -1064,31 +1068,18 @@ namespace kurisu {
 
         explicit Buffer(uint64_t initialSize = k_InitSize) : m_readIndex(k_PrependSize), m_writeIndex(k_PrependSize)
         {
-            m_buf = std::unique_ptr<Buf>((Buf*)operator new(sizeof(Buf) + k_PrependSize + initialSize));
-            m_buf->len = k_PrependSize + initialSize;
-        }
-
-        // 顺便把移动构造也实现了
-        Buffer(Buffer&& other) : m_readIndex(other.m_readIndex), m_writeIndex(other.m_writeIndex), m_buf(std::move(other.m_buf))
-        {
-        }
-
-        // 因为成员有unique_ptr，所以要手动实现拷贝构造
-        Buffer(const Buffer& other) : m_readIndex(other.m_readIndex), m_writeIndex(other.m_writeIndex)
-        {
-            m_buf = std::unique_ptr<Buf>((Buf*)operator new(sizeof(Buf) + other.m_buf->len));
-            m_buf->len = other.m_buf->len;
-            std::copy(other.m_buf->ptr, other.m_buf->ptr + other.m_buf->len, m_buf->ptr);
+            m_len = k_PrependSize + initialSize;
+            m_buf = std::make_shared<Buf>(k_PrependSize + initialSize);
         }
 
 
         void Swap(Buffer& other);
         void Resize(uint64_t size);
-        uint64_t Size() { return m_buf->len - k_PrependSize; }
+        uint64_t Size() { return m_len - k_PrependSize; }
         void Clear() { m_readIndex = m_writeIndex = k_PrependSize; }
 
         uint64_t ReadableBytes() const { return m_writeIndex - m_readIndex; }
-        uint64_t WriteableBytes() const { return m_buf->len - m_writeIndex; }
+        uint64_t WriteableBytes() const { return m_len - m_writeIndex; }
         uint64_t PrependableBytes() const { return m_readIndex; }
 
 
@@ -1148,15 +1139,21 @@ namespace kurisu {
 
         void Shrink(uint64_t reserve);
 
-        uint64_t Capacity() const { return m_buf->len; }
+        uint64_t Capacity() const { return m_len; }
 
         ssize_t ReadSocket(int fd, int* savedErrno);
         void ReadIndexRightShift(uint64_t len) { m_readIndex += len; }
         void ReadIndexLeftShift(uint64_t len) { m_readIndex -= len; }
         void WriteIndexRightShift(uint64_t len) { m_writeIndex += len; }
         void WriteIndexLeftShift(uint64_t len) { m_writeIndex -= len; }
+        Buffer RetainedSlice(uint64_t len);
 
     private:
+        explicit Buffer(Buffer* buf, uint64_t len)
+            : m_readIndex(buf->m_readIndex),
+              m_writeIndex(buf->m_readIndex + len),
+              m_len(len + k_PrependSize),
+              m_buf(buf->m_buf) {}
         void Prepend(const void* data, uint64_t len);
         void EnsureWritableBytes(uint64_t len);
         char* Begin() { return (char*)m_buf->ptr; }
@@ -1168,8 +1165,10 @@ namespace kurisu {
     private:
         uint64_t m_readIndex;   // 从这里开始读
         uint64_t m_writeIndex;  // 从这里开始写
-        std::unique_ptr<Buf> m_buf;
+        uint64_t m_len;
+        std::shared_ptr<Buf> m_buf;
 
+    public:
         static const char k_CRLF[];
     };
 
@@ -1366,7 +1365,7 @@ namespace kurisu {
 
 
     private:
-        void Prepend(Buffer* buf, int64_t n);
+        int Prepend(Buffer* buf, int64_t n);
         void SetMessageCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)>& callback);
         void OnMessage(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp);
         int64_t PeekBodyLength(Buffer* buf);
@@ -1384,7 +1383,7 @@ namespace kurisu {
 
 
     namespace detail {
-        /*
+
         class ShutdownTimingWheel {
         private:
             class Entry {
@@ -1484,7 +1483,6 @@ namespace kurisu {
             int m_index = 0;
             std::vector<Bucket> m_buckets;
         };
-        */
 
 
         void DefaultConnCallback(const std::shared_ptr<kurisu::TcpConnection>& conn);

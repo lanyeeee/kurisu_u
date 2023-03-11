@@ -2056,11 +2056,10 @@ namespace kurisu {
         std::swap(m_readIndex, other.m_readIndex);
         std::swap(m_writeIndex, other.m_writeIndex);
     }
-    void Buffer::Resize(uint64_t new_size)
+    void Buffer::Resize(uint64_t newSize)
     {
-        // 尝试扩大原来的内存，不行就开辟一片新的内存，并且把原来的数据拷贝过去
-        m_buf = std::unique_ptr<Buf>((Buf*)realloc(m_buf.release(), sizeof(Buf) + k_PrependSize + new_size));
-        m_buf->len = k_PrependSize + new_size;
+        m_buf->Resize(k_PrependSize + newSize);
+        m_len = k_PrependSize + newSize;
     }
     const char* Buffer::FindCRLF() const
     {
@@ -2282,7 +2281,10 @@ namespace kurisu {
 
         return n;
     }
-
+    Buffer Buffer::RetainedSlice(uint64_t len)
+    {
+        return Buffer(this, len);
+    }
 
 
 
@@ -2713,7 +2715,11 @@ namespace kurisu {
 
             // 消息完整，跳过指定字节后执行回调
             buf->Discard(m_initialBytesToStrip);
-            m_msgCallback(conn, buf, timestamp);
+
+            Buffer frame = buf->RetainedSlice(frameLength - m_initialBytesToStrip);
+            buf->Discard(frameLength - m_initialBytesToStrip);
+
+            m_msgCallback(conn, &frame, timestamp);
         }
         catch (Exception& e)
         {
@@ -2756,19 +2762,22 @@ namespace kurisu {
     }
     void LengthFieldCodec::SendBuffer(const std::shared_ptr<TcpConnection>& conn, Buffer* buf)
     {
-        Prepend(buf, buf->ReadableBytes());
+        int prependByte = Prepend(buf, buf->ReadableBytes());
         conn->Send(buf->ToStringView());
+        buf->ReadIndexRightShift(prependByte);
     }
 
-    void LengthFieldCodec::Prepend(Buffer* buf, int64_t n)
+    int LengthFieldCodec::Prepend(Buffer* buf, int64_t n)
     {
         switch (m_lengthFieldLength)
         {
-            case 1: buf->PrependInt8((int8_t)(n - m_lengthAdjustment)); break;
-            case 2: buf->PrependInt16((int16_t)(n - m_lengthAdjustment)); break;
-            case 4: buf->PrependInt32((int)(n - m_lengthAdjustment)); break;
-            case 8: buf->PrependInt64(n - m_lengthAdjustment); break;
-            default: LOG_FATAL << fmt::format("unsupported lengthFieldLength: {} (expected: 1, 2, 4, or 8)", m_lengthFieldLength);
+            case 1: buf->PrependInt8((int8_t)(n - m_lengthAdjustment)); return 1;
+            case 2: buf->PrependInt16((int16_t)(n - m_lengthAdjustment)); return 2;
+            case 4: buf->PrependInt32((int)(n - m_lengthAdjustment)); return 4;
+            case 8: buf->PrependInt64(n - m_lengthAdjustment); return 8;
+            default:
+                LOG_FATAL << fmt::format("unsupported lengthFieldLength: {} (expected: 1, 2, 4, or 8)", m_lengthFieldLength);
+                return 0;
         }
     }
 }  // namespace kurisu
