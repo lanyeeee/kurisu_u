@@ -1288,7 +1288,6 @@ namespace kurisu {
 
         void AddToShutdownTimingWheel();
 
-        void SetLengthFieldDecoder(LengthFieldDecoder* decoder) { m_decoder = *decoder; }
 
     private:
         void UpdateShutdownTimingWheel();
@@ -1316,7 +1315,6 @@ namespace kurisu {
         EventLoop* m_loop;                       // 所属的EventLoop
         std::unique_ptr<detail::Socket> m_socket;
         std::unique_ptr<detail::Channel> m_channel;
-        LengthFieldDecoder m_decoder;
         Buffer m_inputBuf;
         Buffer m_outputBuf;
         std::any m_any;
@@ -1355,9 +1353,6 @@ namespace kurisu {
         // must be called before Start
         void SetHeartbeatMsg(const void* data, int len);
 
-        // must be called before Start
-        // lengthFieldLength only supports 1/2/4/8
-        void SetLengthFieldDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip);
 
         // must be called after Start
         std::shared_ptr<detail::EventLoopThreadPool> GetThreadPool() { return m_threadPool; }
@@ -1402,7 +1397,6 @@ namespace kurisu {
         std::unique_ptr<detail::Acceptor> m_acceptor;
         EventLoop* m_loop;  // TcpServer所属的EventLoop
         std::shared_ptr<detail::EventLoopThreadPool> m_threadPool;
-        LengthFieldDecoder m_decoder;
         const std::string m_ipPort;
         const std::string m_name;
         std::function<void(const std::shared_ptr<TcpConnection>&)> m_connCallback;                     // 连接到来执行的回调函数

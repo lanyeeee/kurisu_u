@@ -2387,10 +2387,6 @@ namespace kurisu {
 
 
 
-
-
-
-
     TcpConnection::TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const SockAddr& localAddr, const SockAddr& peerAddr)
         : m_status(k_Connecting),
           m_loop(loop),
@@ -2512,25 +2508,7 @@ namespace kurisu {
 
         if (n > 0)  // 读成功就调用用户设置的回调函数
         {
-            if (m_decoder.m_lengthFieldLength > 0)
-            {
-                try
-                {
-                    while (m_decoder.IsComplete(&m_inputBuf))  // 如果inputBuf中的数据足以构成一个完整的包
-                    {
-                        Buffer buf = m_decoder.Decode(&m_inputBuf);
-                        m_msgCallback(shared_from_this(), &buf, receiveTime);
-                    }
-                }
-                // 出问题直接打印然后强制断开连接
-                catch (LengthFieldDecoder::LengthFieldDecoderException& e)
-                {
-                    ForceCloseInLoop();
-                    LOG_WARN << fmt::format("TcpConnection::HandleRead[{}] forced to close for LengthFieldDecoderException: {}", Name(), e.what());
-                }
-            }
-            else
-                m_msgCallback(shared_from_this(), &m_inputBuf, receiveTime);
+            m_msgCallback(shared_from_this(), &m_inputBuf, receiveTime);
         }
         else if (n == 0)  // 说明对方调用了close()
             HandleClose();
@@ -2757,7 +2735,7 @@ namespace kurisu {
         // 关闭回调函数,作用是将这个关闭的TcpConnection从map中删除
         conn->SetCloseCallback(std::bind(&TcpServer::RemoveConnection, this, std::placeholders::_1));
         conn->SetTcpNoDelay(m_isTcpNoDelay);
-        conn->SetLengthFieldDecoder(&m_decoder);
+
         if (m_heartbeatInterval > 0)
             ioLoop->AddHeartbeat(conn);
         // 没有在这里将连接加入ShutdownTimerWheel是因为不一定每条连接都需要被ShutdownTimerWheel接管
@@ -2788,12 +2766,5 @@ namespace kurisu {
         // 所以离开这个函数后就只剩1,然后执行完TcpConnection::ConnectDestroyed,对应的TcpConnection才真正析构
     }
     void TcpServer::SetHeartbeatMsg(const void* data, int len) { detail::HeartbeatTimingWheel::Msg::SetMsg(data, len); }
-    void TcpServer::SetLengthFieldDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
-    {
-        int len = lengthFieldLength;
-        if (len != 1 && len != 2 && len != 4 && len != 8)
-            LOG_FATAL << "TcpServer::SetLengthFieldDecoder lengthFieldLength only supports 1/2/4/8";
-        m_decoder = LengthFieldDecoder(maxFrameLength, lengthFieldOffset, lengthFieldLength, lengthAdjustment, initialBytesToStrip);
-    }
 
 }  // namespace kurisu
