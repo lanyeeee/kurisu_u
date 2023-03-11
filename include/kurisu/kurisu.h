@@ -703,8 +703,6 @@ namespace kurisu {
         class Channel;
         class Poller;
         class TimerQueue;
-        class ShutdownTimingWheel;
-        class HeartbeatTimingWheel;
 
     }  // namespace detail
 
@@ -758,15 +756,8 @@ namespace kurisu {
         bool InLoopThread() const { return m_threadID == this_thrd::Tid(); }
         // 是否正在调用回调函数
         bool IsRunningCallback() const { return m_isRunningCallback; }
-        // 将此TcpConnection加入到ShutdownTimingWheel中
-        void AddShutdown(const std::shared_ptr<TcpConnection>& conn);
-        // 更新此TcpConnection,以防ShutdownTimingWheelTimingWheel时间到调用Shutdown
-        void UpdateShutdown(const std::shared_ptr<TcpConnection>& conn);
 
-        void AddHeartbeat(const std::shared_ptr<TcpConnection>& conn);
 
-        void SetShutdownTimingWheel(int interval) { m_shutdownInterval = interval; }
-        void SetHeartbeatTimingWheel(int interval) { m_heartbeatInterval = interval; }
         // 获取此线程的EventLoop
         static EventLoop* GetLoopOfThisThread();
 
@@ -782,8 +773,7 @@ namespace kurisu {
         bool m_isRunningTasks = false;      //  EventLoop线程是否正在执行的额外任务
         std::atomic_bool m_isQuit = false;  // 线程是否调用了Quit()
         int m_wakeUpfd;                     // 一个eventfd   用于唤醒阻塞在Poll的Loop
-        int m_shutdownInterval = 0;
-        int m_heartbeatInterval = 0;
+
         const pid_t m_threadID;
         detail::Channel* m_thisActiveChannel = nullptr;  // 当前正在执行哪个channel的回调函数
         int64_t m_loopNum = 0;                           // Loop总循环次数
@@ -791,9 +781,7 @@ namespace kurisu {
         std::unique_ptr<detail::Poller> m_poller;
         std::unique_ptr<detail::TimerQueue> timerQueue_;   // Timer队列
         std::unique_ptr<detail::Channel> m_wakeUpChannel;  // 用于退出时唤醒loop
-        std::unique_ptr<detail::ShutdownTimingWheel> m_shutdownTimingWheel;
-        std::unique_ptr<detail::HeartbeatTimingWheel> m_heartbeatTimingWheel;
-        std::vector<detail::Channel*> m_activeChannels;  // 保存所有有事件到来的channel
+        std::vector<detail::Channel*> m_activeChannels;    // 保存所有有事件到来的channel
 
         // EventLoop线程每次轮询除了执行有事件到来的channel的回调函数外，也会执行这个vector内的函数（额外的任务）
         std::vector<std::function<void()>> m_waitingTasks;
@@ -809,13 +797,10 @@ namespace kurisu {
 
         class EventLoopThread : uncopyable {
         public:
-            EventLoopThread(int shutdownInterval = 0,
-                            int heartbeatInterval = 0,
-                            const std::function<void(EventLoop*)>& threadInitCallback = std::function<void(EventLoop*)>(),
-                            const std::string& name = std::string())
-                : m_shutdownInterval(shutdownInterval),
-                  m_heartbeatInterval(heartbeatInterval),
-                  m_thrd(std::bind(&EventLoopThread::Handle, this), name),
+            EventLoopThread(
+                const std::function<void(EventLoop*)>& threadInitCallback = std::function<void(EventLoop*)>(),
+                const std::string& name = std::string())
+                : m_thrd(std::bind(&EventLoopThread::Handle, this), name),
                   m_threadInitCallback(threadInitCallback) {}
 
             ~EventLoopThread();
@@ -827,8 +812,6 @@ namespace kurisu {
 
             EventLoop* m_loop = nullptr;
             bool m_isExiting = false;
-            int m_shutdownInterval;
-            int m_heartbeatInterval;
             Thread m_thrd;
             std::mutex m_mu;
             std::condition_variable m_cond;
@@ -839,9 +822,7 @@ namespace kurisu {
         public:
             EventLoopThreadPool(EventLoop* loop, const std::string& name);
             void SetThreadNum(int threadNum) { m_thrdNum = threadNum; }
-            void Start(int shutdownInterval = 0,
-                       int heartbeatInterval = 0,
-                       const std::function<void(EventLoop*)>& threadInitCallback = std::function<void(EventLoop*)>());
+            void Start(const std::function<void(EventLoop*)>& threadInitCallback = std::function<void(EventLoop*)>());
             EventLoop* GetNextLoop();
             EventLoop* GetLoopRandom();
             std::vector<EventLoop*> GetAllLoops();
@@ -1259,11 +1240,10 @@ namespace kurisu {
         const std::any& GetContext() const { return m_context; }
         std::any& GetContext() { return m_context; }
 
-        void AddToShutdownTimingWheel();
+
 
 
     private:
-        void UpdateShutdownTimingWheel();
         void HandleRead(Timestamp receiveTime);
         void HandleWrite();
         void HandleClose();
@@ -1282,10 +1262,9 @@ namespace kurisu {
         static const int k_Connected = 2;
         static const int k_Disconnecting = 3;
 
-        bool m_isReading;                        // 是否正在read
-        bool m_isInShutdownTimingWheel = false;  // 是否已在ShutdownTimingWheel中
-        std::atomic_int m_status;                // 连接的状态
-        EventLoop* m_loop;                       // 所属的EventLoop
+        bool m_isReading;          // 是否正在read
+        std::atomic_int m_status;  // 连接的状态
+        EventLoop* m_loop;         // 所属的EventLoop
         std::unique_ptr<detail::Socket> m_socket;
         std::unique_ptr<detail::Channel> m_channel;
         Buffer m_inputBuf;
@@ -1319,12 +1298,6 @@ namespace kurisu {
         void SetThreadInitCallback(const std::function<void(EventLoop*)>& callback) { m_threadInitCallback = callback; }
         // must be called before Start
         void SetTcpNoDelay(bool on) { m_isTcpNoDelay = on; }
-        // must be called before Start
-        void SetShutdownInterval(int interval) { m_shutdownInterval = interval; }
-        // must be called before Start
-        void SetHeartbeatInterval(int interval) { m_heartbeatInterval = interval; }
-        // must be called before Start
-        void SetHeartbeatMsg(const void* data, int len);
 
 
         // must be called after Start
@@ -1368,8 +1341,6 @@ namespace kurisu {
         bool m_isTcpNoDelay = false;
         std::atomic_bool m_isStarted = false;
         int m_nextConnID;
-        int m_shutdownInterval = 0;
-        int m_heartbeatInterval = 0;
         std::unique_ptr<detail::Acceptor> m_acceptor;
         EventLoop* m_loop;  // TcpServer所属的EventLoop
         std::shared_ptr<detail::EventLoopThreadPool> m_threadPool;
@@ -1413,6 +1384,7 @@ namespace kurisu {
 
 
     namespace detail {
+        /*
         class ShutdownTimingWheel {
         private:
             class Entry {
@@ -1512,6 +1484,7 @@ namespace kurisu {
             int m_index = 0;
             std::vector<Bucket> m_buckets;
         };
+        */
 
 
         void DefaultConnCallback(const std::shared_ptr<kurisu::TcpConnection>& conn);

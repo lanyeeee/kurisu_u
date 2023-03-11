@@ -1077,8 +1077,6 @@ namespace kurisu {
         void EventLoopThread::Handle()
         {
             EventLoop loop;
-            loop.SetShutdownTimingWheel(m_shutdownInterval);
-            loop.SetHeartbeatTimingWheel(m_heartbeatInterval);
 
             if (m_threadInitCallback)
                 m_threadInitCallback(&loop);
@@ -1099,9 +1097,7 @@ namespace kurisu {
 
         EventLoopThreadPool::EventLoopThreadPool(EventLoop* loop, const std::string& name)
             : m_loop(loop), m_name(name) {}
-        void EventLoopThreadPool::Start(int shutdownInterval,
-                                        int heartbeatInterval,
-                                        const std::function<void(EventLoop*)>& threadInitCallback)
+        void EventLoopThreadPool::Start(const std::function<void(EventLoop*)>& threadInitCallback)
         {
             m_loop->AssertInLoopThread();
             m_isStarted = true;
@@ -1110,15 +1106,13 @@ namespace kurisu {
             {
                 char name[m_name.size() + 32] = {0};
                 fmt::format_to(name, "{}{}", m_name.c_str(), i);
-                EventLoopThread* p = new EventLoopThread(shutdownInterval, heartbeatInterval, threadInitCallback, name);
+                EventLoopThread* p = new EventLoopThread(threadInitCallback, name);
                 m_thrds.emplace_back(std::unique_ptr<EventLoopThread>(p));
                 m_loops.emplace_back(p->Start());
             }
             // 如果m_thrdNum == 0,就用当前线程执行threadInitCallback
             if (m_thrdNum == 0)
             {
-                m_loop->SetShutdownTimingWheel(shutdownInterval);
-                m_loop->SetHeartbeatTimingWheel(heartbeatInterval);
                 if (threadInitCallback)
                     threadInitCallback(m_loop);
             }
@@ -1531,8 +1525,6 @@ namespace kurisu {
 
     namespace detail {
 
-        int HeartbeatTimingWheel::Msg::m_len = 4;
-        std::unique_ptr<char> HeartbeatTimingWheel::Msg::m_msg = std::unique_ptr<char>(new char[4]{0, 0, 0, 0});
 
 
 
@@ -1927,11 +1919,6 @@ namespace kurisu {
     {
         AssertInLoopThread();
         std::atomic_int32_t n = 0;
-        if (m_shutdownInterval != 0)  // 如果设置了踢掉空闲连接的时间就创建ShutdownTimingWheel
-            m_shutdownTimingWheel = std::make_unique<detail::ShutdownTimingWheel>(this, m_shutdownInterval);
-        if (m_heartbeatInterval != 0)  // 如果设置了发送心跳的间隔就创建ShutdownTimingWheel
-            m_heartbeatTimingWheel = std::make_unique<detail::HeartbeatTimingWheel>(this, m_heartbeatInterval);
-
 
         m_isLooping = true;
         m_isQuit = false;
@@ -2059,18 +2046,6 @@ namespace kurisu {
         return timerQueue_->Add(std::move(callback), time, interval);
     }
     void EventLoop::Cancel(TimerID timerID) { return timerQueue_->Cancel(timerID); }
-    void EventLoop::AddShutdown(const std::shared_ptr<TcpConnection>& conn)
-    {
-        if (m_shutdownInterval == 0)
-            LOG_FATAL << "you did not set the interval of shutdown, please set it by kurisu::TcpServer::SetShutdownInterval";
-        m_shutdownTimingWheel->PushAndSetAny(conn);
-    }
-    void EventLoop::UpdateShutdown(const std::shared_ptr<TcpConnection>& conn)
-    {
-        m_shutdownTimingWheel->Update(conn);
-    }
-    void EventLoop::AddHeartbeat(const std::shared_ptr<TcpConnection>& conn) { m_heartbeatTimingWheel->Add(conn); }
-
 
 
 
@@ -2426,8 +2401,6 @@ namespace kurisu {
     {
         m_loop->AssertInLoopThread();
         int savedErrno = 0;
-        if (m_isInShutdownTimingWheel)
-            UpdateShutdownTimingWheel();
         // 尝试一次读完tcp缓冲区的所有数据,返回实际读入的字节数(一次可能读不完)
         ssize_t n = m_inputBuf.ReadSocket(m_channel->fd(), &savedErrno);
 
@@ -2581,15 +2554,6 @@ namespace kurisu {
             m_isReading = false;
         }
     }
-    void TcpConnection::AddToShutdownTimingWheel()
-    {
-        m_isInShutdownTimingWheel = true;
-        m_loop->AddShutdown(shared_from_this());
-    }
-    void TcpConnection::UpdateShutdownTimingWheel()
-    {
-        m_loop->UpdateShutdown(shared_from_this());
-    }
     bool TcpConnection::GetTcpInfo(struct tcp_info* tcpi) const { return m_socket->GetTcpInfo(tcpi); }
 
 
@@ -2612,7 +2576,7 @@ namespace kurisu {
         if (!m_isStarted)
         {
             m_isStarted = true;
-            m_threadPool->Start(m_shutdownInterval, m_heartbeatInterval, m_threadInitCallback);
+            m_threadPool->Start(m_threadInitCallback);
             m_loop->Run(std::bind(&detail::Acceptor::Listen, m_acceptor.get()));
         }
     }
@@ -2651,9 +2615,6 @@ namespace kurisu {
         conn->SetCloseCallback(std::bind(&TcpServer::RemoveConnection, this, std::placeholders::_1));
         conn->SetTcpNoDelay(m_isTcpNoDelay);
 
-        if (m_heartbeatInterval > 0)
-            ioLoop->AddHeartbeat(conn);
-        // 没有在这里将连接加入ShutdownTimerWheel是因为不一定每条连接都需要被ShutdownTimerWheel接管
         ioLoop->Run(std::bind(&TcpConnection::ConnectEstablished, std::ref(conn)));
     }
     void TcpServer::RemoveConnection(const std::shared_ptr<TcpConnection>& conn)
@@ -2680,7 +2641,6 @@ namespace kurisu {
         // 1.conn本身   2.上面bind了一个
         // 所以离开这个函数后就只剩1,然后执行完TcpConnection::ConnectDestroyed,对应的TcpConnection才真正析构
     }
-    void TcpServer::SetHeartbeatMsg(const void* data, int len) { detail::HeartbeatTimingWheel::Msg::SetMsg(data, len); }
     void TcpServer::SetLengthFieldCodec(LengthFieldCodec& codec)
     {
         using namespace std::placeholders;
