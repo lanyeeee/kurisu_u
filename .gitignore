@@ -13,3 +13,5 @@ _deps
 
 build/
 .idea/
+.vscode/
+cmake-build-debug/

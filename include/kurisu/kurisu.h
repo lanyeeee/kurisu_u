@@ -1168,12 +1168,12 @@ namespace kurisu {
         ssize_t ReadSocket(int fd, int* savedErrno);
         void ReadIndexRightShift(uint64_t len) { m_readIndex += len; }
         void ReadIndexLeftShift(uint64_t len) { m_readIndex -= len; }
+        void WriteIndexRightShift(uint64_t len) { m_writeIndex += len; }
+        void WriteIndexLeftShift(uint64_t len) { m_writeIndex -= len; }
 
     private:
         void Prepend(const void* data, uint64_t len);
         void EnsureWritableBytes(uint64_t len);
-        void WriteIndexRightShift(uint64_t len) { m_writeIndex += len; }
-        void WriteIndexLeftShift(uint64_t len) { m_writeIndex -= len; }
         char* Begin() { return (char*)m_buf->ptr; }
         const char* Begin() const { return (const char*)m_buf->ptr; }
         void MakeSpace(uint64_t len);
