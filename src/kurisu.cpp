@@ -2804,10 +2804,10 @@ namespace kurisu {
     {
         switch (m_lengthFieldLength)
         {
-            case 1: buf->PrependInt8((int8_t)(n + m_lengthAdjustment)); break;
-            case 2: buf->PrependInt16((int16_t)(n + m_lengthAdjustment)); break;
-            case 4: buf->PrependInt32((int)(n + m_lengthAdjustment)); break;
-            case 8: buf->PrependInt64(n + m_lengthAdjustment); break;
+            case 1: buf->PrependInt8((int8_t)(n - m_lengthAdjustment)); break;
+            case 2: buf->PrependInt16((int16_t)(n - m_lengthAdjustment)); break;
+            case 4: buf->PrependInt32((int)(n - m_lengthAdjustment)); break;
+            case 8: buf->PrependInt64(n - m_lengthAdjustment); break;
             default: LOG_FATAL << fmt::format("unsupported lengthFieldLength: {} (expected: 1, 2, 4, or 8)", m_lengthFieldLength);
         }
     }
