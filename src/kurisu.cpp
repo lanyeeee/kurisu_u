@@ -2309,81 +2309,6 @@ namespace kurisu {
     }
 
 
-    LengthFieldDecoder::LengthFieldDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
-        : m_maxFrameLength(maxFrameLength),
-          m_lengthFieldOffset(lengthFieldOffset),
-          m_lengthFieldLength(lengthFieldLength),
-          m_lengthAdjustment(lengthAdjustment),
-          m_lengthFieldEndOffset(lengthFieldOffset + lengthFieldLength),
-          m_initialBytesToStrip(initialBytesToStrip) {}
-
-    bool LengthFieldDecoder::IsComplete(Buffer* buf)
-    {
-        int64_t frameLength = 0;
-
-        // 如果当前可读字节还未达到长度长度域的偏移，那肯定不完整
-        if ((int)buf->ReadableBytes() < m_lengthFieldEndOffset)
-            return false;
-
-        // 拿到报文体长度
-        int64_t bodyLen = PeekBodyLength(buf);
-
-        // 如果报文体的长度为负数，直接抛出异常
-        if (bodyLen < 0)
-            throw LengthFieldDecoderException(fmt::format("negative pre-adjustment length field: {}", bodyLen));
-
-        // 确定整个包的长度
-        frameLength = bodyLen + m_lengthAdjustment + m_lengthFieldEndOffset;
-
-        // 整个包的长度还没有长度域长，直接抛出异常
-        if (frameLength < m_lengthFieldEndOffset)
-            throw LengthFieldDecoderException(fmt::format("Adjusted frame length {} is less than lengthFieldEndOffset: {}", frameLength, m_lengthFieldEndOffset));
-
-        // 数据包长度超出最大包长度
-        if (frameLength > m_maxFrameLength)
-            throw LengthFieldDecoderException(fmt::format(
-                "Adjusted frame length exceeds {}: {}", m_maxFrameLength, frameLength));
-
-
-        // 前面是长度的校验，顺便拿到了帧的长度
-
-        // 验证当前是否已经读到足够的字节
-        if ((int)buf->ReadableBytes() < m_frameLengthInt)
-            return false;
-
-        // 跳过的字节不能大于数据包的长度
-        if (m_initialBytesToStrip > frameLength)
-            throw LengthFieldDecoderException(fmt::format("Adjusted frame length ({}) is less than initialBytesToStrip: {}", frameLength, m_initialBytesToStrip));
-
-        m_frameLengthInt = (int)frameLength;  // 确定新的帧有多长
-        buf->Discard(m_initialBytesToStrip);
-        return true;
-    }
-
-    Buffer LengthFieldDecoder::Decode(Buffer* buf)
-    {
-        Buffer frame(m_frameLengthInt - m_initialBytesToStrip);
-        frame.Append(buf->ReadIndex(), frame.Size());
-        buf->Discard(frame.Size());
-        return frame;
-    }
-
-    int64_t LengthFieldDecoder::PeekBodyLength(Buffer* buf)
-    {
-        int64_t bodyLen = -1;
-        buf->ReadIndexRightShift(m_lengthFieldOffset);
-        switch (m_lengthFieldLength)
-        {
-            case 1: bodyLen = buf->PeekInt8(); break;
-            case 2: bodyLen = buf->PeekInt16(); break;
-            case 4: bodyLen = buf->PeekInt32(); break;
-            case 8: bodyLen = buf->PeekInt64(); break;
-            default: LOG_FATAL << fmt::format("unsupported lengthFieldLength: {} (expected: 1, 2, 4, or 8)", m_lengthFieldLength);
-        }
-        buf->ReadIndexLeftShift(m_lengthFieldOffset);
-        return bodyLen;
-    }
-
 
 
 
@@ -2580,16 +2505,6 @@ namespace kurisu {
         // 如果没在epoll注册就直接发
         if (!m_channel->IsWriting())
         {
-            // aiocb wt;
-            // bzero(&wt, sizeof(wt));
-            // wt.aio_fildes = m_channel->fd();
-            // wt.aio_buf = (char*)data;
-            // wt.aio_nbytes = len;
-            // wt.aio_offset = 0;
-            // wt.aio_lio_opcode = LIO_WRITE;
-
-            // n = aio_write(&wt);
-
             n = write(m_channel->fd(), data, len);
             if (n >= 0)
             {
@@ -2766,5 +2681,134 @@ namespace kurisu {
         // 所以离开这个函数后就只剩1,然后执行完TcpConnection::ConnectDestroyed,对应的TcpConnection才真正析构
     }
     void TcpServer::SetHeartbeatMsg(const void* data, int len) { detail::HeartbeatTimingWheel::Msg::SetMsg(data, len); }
+    void TcpServer::SetLengthFieldCodec(LengthFieldCodec& codec)
+    {
+        using namespace std::placeholders;
+        codec.SetMessageCallback(std::move(m_msgCallback));
+        m_msgCallback = std::bind(&LengthFieldCodec::OnMessage, &codec, _1, _2, _3);
+    }
 
+
+
+    LengthFieldCodec::LengthFieldCodec(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
+        : m_maxFrameLength(maxFrameLength),
+          m_lengthFieldOffset(lengthFieldOffset),
+          m_lengthFieldLength(lengthFieldLength),
+          m_lengthAdjustment(lengthAdjustment),
+          m_lengthFieldEndOffset(lengthFieldOffset + lengthFieldLength),
+          m_initialBytesToStrip(initialBytesToStrip) {}
+    int64_t LengthFieldCodec::PeekBodyLength(Buffer* buf)
+    {
+        int64_t bodyLen = -1;
+        buf->ReadIndexRightShift(m_lengthFieldOffset);
+        switch (m_lengthFieldLength)
+        {
+            case 1: bodyLen = buf->PeekInt8(); break;
+            case 2: bodyLen = buf->PeekInt16(); break;
+            case 4: bodyLen = buf->PeekInt32(); break;
+            case 8: bodyLen = buf->PeekInt64(); break;
+            default: LOG_FATAL << fmt::format("unsupported lengthFieldLength: {} (expected: 1, 2, 4, or 8)", m_lengthFieldLength);
+        }
+        buf->ReadIndexLeftShift(m_lengthFieldOffset);
+        return bodyLen;
+    }
+    void LengthFieldCodec::OnMessage(const std::shared_ptr<TcpConnection>& conn, Buffer* buf, Timestamp timestamp)
+    {
+        try
+        {
+            int64_t frameLength = 0;
+
+            // 如果当前可读字节还未达到长度长度域的偏移，那肯定不完整
+            if ((int)buf->ReadableBytes() < m_lengthFieldEndOffset)
+                return;
+
+            // 拿到报文体长度
+            int64_t bodyLen = PeekBodyLength(buf);
+
+            // 如果报文体的长度为负数，直接抛出异常
+            if (bodyLen < 0)
+                throw Exception(fmt::format("negative pre-adjustment length field: {}", bodyLen));
+
+            // 确定整个包的长度
+            frameLength = bodyLen + m_lengthAdjustment + m_lengthFieldEndOffset;
+
+            // 整个包的长度还没有长度域长，直接抛出异常
+            if (frameLength < m_lengthFieldEndOffset)
+                throw Exception(fmt::format("Adjusted frame length {} is less than lengthFieldEndOffset: {}", frameLength, m_lengthFieldEndOffset));
+
+            // 数据包长度超出最大包长度
+            if (frameLength > m_maxFrameLength)
+                throw Exception(fmt::format("Adjusted frame length exceeds {}: {}", m_maxFrameLength, frameLength));
+
+
+            // 前面是长度的校验，顺便拿到了帧的长度
+
+            // 验证当前是否已经读到足够的字节
+            if ((int)buf->ReadableBytes() < frameLength)
+                return;
+
+            // 跳过的字节不能大于数据包的长度
+            if (m_initialBytesToStrip > frameLength)
+                throw Exception(fmt::format("Adjusted frame length ({}) is less than initialBytesToStrip: {}", frameLength, m_initialBytesToStrip));
+
+            // 消息完整，跳过指定字节后执行回调
+            buf->Discard(m_initialBytesToStrip);
+            m_msgCallback(conn, buf, timestamp);
+        }
+        catch (Exception& e)
+        {
+            conn->ForceClose();
+            LOG_ERROR << fmt::format("TcpConnection::HandleRead[{}] forced to close for LengthFieldDecoderException: {}", conn->Name(), e.what());
+        }
+    }
+    void LengthFieldCodec::SetMessageCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)>& callback)
+    {
+        m_msgCallback = callback;
+    }
+    void LengthFieldCodec::Send(const std::shared_ptr<TcpConnection>& conn, std::string&& msg)
+    {
+        Buffer buf(msg.size());
+        buf.Append(msg);
+        Prepend(&buf, msg.size());
+
+        conn->Send(&buf);
+    }
+    void LengthFieldCodec::SendData(const std::shared_ptr<TcpConnection>& conn, const void* data, int len)
+    {
+        Buffer buf(len);
+        buf.Append(data, len);
+        Prepend(&buf, len);
+
+        conn->Send(&buf);
+    }
+    void LengthFieldCodec::SendString(const std::shared_ptr<TcpConnection>& conn, const std::string_view& msg)
+    {
+        Buffer buf(msg.size());
+        buf.Append(msg);
+        Prepend(&buf, msg.size());
+
+        conn->Send(&buf);
+    }
+    void LengthFieldCodec::SendBufferAndDiscard(const std::shared_ptr<TcpConnection>& conn, Buffer* buf)
+    {
+        Prepend(buf, buf->ReadableBytes());
+        conn->Send(buf);
+    }
+    void LengthFieldCodec::SendBuffer(const std::shared_ptr<TcpConnection>& conn, Buffer* buf)
+    {
+        Prepend(buf, buf->ReadableBytes());
+        conn->Send(buf->ToStringView());
+    }
+
+    void LengthFieldCodec::Prepend(Buffer* buf, int64_t n)
+    {
+        switch (m_lengthFieldLength)
+        {
+            case 1: buf->PrependInt8((int8_t)(n + m_lengthAdjustment)); break;
+            case 2: buf->PrependInt16((int16_t)(n + m_lengthAdjustment)); break;
+            case 4: buf->PrependInt32((int)(n + m_lengthAdjustment)); break;
+            case 8: buf->PrependInt64(n + m_lengthAdjustment); break;
+            default: LOG_FATAL << fmt::format("unsupported lengthFieldLength: {} (expected: 1, 2, 4, or 8)", m_lengthFieldLength);
+        }
+    }
 }  // namespace kurisu

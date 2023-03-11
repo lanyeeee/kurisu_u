@@ -19,7 +19,11 @@
 uint64_t htonll(uint64_t val);
 uint64_t ntohll(uint64_t val);
 
+
+
 namespace kurisu {
+    class LengthFieldCodec;
+
     namespace detail {
         class copyable {
         protected:
@@ -1188,37 +1192,6 @@ namespace kurisu {
         static const char k_CRLF[];
     };
 
-    class LengthFieldDecoder : detail::copyable {
-    public:
-        class LengthFieldDecoderException : public Exception {
-        public:
-            LengthFieldDecoderException(std::string msg) : Exception(std::move(msg)) {}
-        };
-
-        LengthFieldDecoder() = default;
-        LengthFieldDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip);
-
-        bool IsComplete(Buffer* buf);
-
-        Buffer Decode(Buffer* buf);
-
-    private:
-        void Fail(int64_t frameLength);
-        void FailIfNecessary(bool firstDetectionOfTooLongFrame);
-        int64_t PeekBodyLength(Buffer* buf);
-        void DiscardingTooLongFrame(Buffer* buf);
-
-    private:
-        int m_maxFrameLength;
-        int m_lengthFieldOffset;
-        int m_lengthFieldLength;
-        int m_lengthAdjustment;
-        int m_lengthFieldEndOffset;
-        int m_initialBytesToStrip;
-        int m_frameLengthInt;
-        friend TcpConnection;
-    };
-
     class TcpConnection : detail::uncopyable, public std::enable_shared_from_this<TcpConnection> {
     public:
         TcpConnection(EventLoop* loop, const std::string& name, int sockfd, const SockAddr& localAddr, const SockAddr& peerAddr);
@@ -1378,6 +1351,9 @@ namespace kurisu {
             m_writeCompleteCallback = callback;
         }
 
+        // must be called after SetMessageCallback
+        void SetLengthFieldCodec(LengthFieldCodec& codec);
+
 
     private:
         using ConnectionMap = std::map<std::string, std::shared_ptr<TcpConnection>>;
@@ -1405,6 +1381,36 @@ namespace kurisu {
         std::function<void(EventLoop*)> m_threadInitCallback;
         ConnectionMap m_connections;
     };
+
+    class LengthFieldCodec : detail::copyable {
+    public:
+        LengthFieldCodec() = delete;
+        LengthFieldCodec(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip);
+
+        void Send(const std::shared_ptr<TcpConnection>& conn, std::string&& msg);
+        void SendData(const std::shared_ptr<TcpConnection>& conn, const void* data, int len);
+        void SendString(const std::shared_ptr<TcpConnection>& conn, const std::string_view& msg);
+        void SendBuffer(const std::shared_ptr<TcpConnection>& conn, Buffer* buf);
+        void SendBufferAndDiscard(const std::shared_ptr<TcpConnection>& conn, Buffer* buf);
+
+
+    private:
+        void Prepend(Buffer* buf, int64_t n);
+        void SetMessageCallback(const std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)>& callback);
+        void OnMessage(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp);
+        int64_t PeekBodyLength(Buffer* buf);
+
+    private:
+        const int m_maxFrameLength;
+        const int m_lengthFieldOffset;
+        const int m_lengthFieldLength;
+        const int m_lengthAdjustment;
+        const int m_lengthFieldEndOffset;
+        const int m_initialBytesToStrip;
+        std::function<void(const std::shared_ptr<TcpConnection>&, Buffer*, Timestamp)> m_msgCallback;
+        friend TcpServer;
+    };
+
 
     namespace detail {
         class ShutdownTimingWheel {
