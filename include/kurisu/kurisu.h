@@ -1254,10 +1254,10 @@ namespace kurisu {
         // 当TcpServer remove一个连接或自身析构时会调用这个函数
         void ConnectDestroyed();
 
-        void SetAny(std::any& any) { m_any = any; }
-        void SetAny(std::any&& any) { m_any = std::move(any); }
-        const std::any& GetAny() const { return m_any; }
-        std::any& GetAny() { return m_any; }
+        void SetContext(std::any& context) { m_context = context; }
+        void SetContext(std::any&& context) { m_context = std::move(context); }
+        const std::any& GetContext() const { return m_context; }
+        std::any& GetContext() { return m_context; }
 
         void AddToShutdownTimingWheel();
 
@@ -1290,7 +1290,7 @@ namespace kurisu {
         std::unique_ptr<detail::Channel> m_channel;
         Buffer m_inputBuf;
         Buffer m_outputBuf;
-        std::any m_any;
+        std::any m_context;
         const SockAddr m_localAddr;  // 本地地址
         const SockAddr m_peerAddr;   // 对端地址
         const std::string m_name;    // 名称
@@ -1444,12 +1444,12 @@ namespace kurisu {
             void PushAndSetAny(const std::shared_ptr<TcpConnection>& conn)
             {
                 auto entry = std::make_shared<Entry>(conn);
-                conn->SetAny(std::weak_ptr<Entry>(entry));
+                conn->SetContext(std::weak_ptr<Entry>(entry));
                 m_buckets.back().insert(std::move(entry));
             }
             void Update(const std::shared_ptr<TcpConnection>& conn)
             {
-                auto weak = std::any_cast<std::weak_ptr<Entry>>(conn->GetAny());
+                auto weak = std::any_cast<std::weak_ptr<Entry>>(conn->GetContext());
                 if (auto entry = weak.lock(); entry)
                     m_buckets.back().insert(std::move(entry));
             }
