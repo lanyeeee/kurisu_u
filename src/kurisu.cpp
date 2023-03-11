@@ -2309,7 +2309,7 @@ namespace kurisu {
     }
 
 
-    LengthCodec::LengthCodec(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
+    LengthFieldDecoder::LengthFieldDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
         : m_maxFrameLength(maxFrameLength),
           m_lengthFieldOffset(lengthFieldOffset),
           m_lengthFieldLength(lengthFieldLength),
@@ -2317,7 +2317,7 @@ namespace kurisu {
           m_lengthFieldEndOffset(lengthFieldOffset + lengthFieldLength),
           m_initialBytesToStrip(initialBytesToStrip) {}
 
-    bool LengthCodec::IsComplete(Buffer* buf)
+    bool LengthFieldDecoder::IsComplete(Buffer* buf)
     {
         int64_t frameLength = 0;
 
@@ -2330,18 +2330,18 @@ namespace kurisu {
 
         // 如果报文体的长度为负数，直接抛出异常
         if (bodyLen < 0)
-            throw LengthCodecException(fmt::format("negative pre-adjustment length field: {}", bodyLen));
+            throw LengthFieldDecoderException(fmt::format("negative pre-adjustment length field: {}", bodyLen));
 
         // 确定整个包的长度
         frameLength = bodyLen + m_lengthAdjustment + m_lengthFieldEndOffset;
 
         // 整个包的长度还没有长度域长，直接抛出异常
         if (frameLength < m_lengthFieldEndOffset)
-            throw LengthCodecException(fmt::format("Adjusted frame length {} is less than lengthFieldEndOffset: {}", frameLength, m_lengthFieldEndOffset));
+            throw LengthFieldDecoderException(fmt::format("Adjusted frame length {} is less than lengthFieldEndOffset: {}", frameLength, m_lengthFieldEndOffset));
 
         // 数据包长度超出最大包长度
         if (frameLength > m_maxFrameLength)
-            throw LengthCodecException(fmt::format(
+            throw LengthFieldDecoderException(fmt::format(
                 "Adjusted frame length exceeds {}: {}", m_maxFrameLength, frameLength));
 
 
@@ -2353,14 +2353,14 @@ namespace kurisu {
 
         // 跳过的字节不能大于数据包的长度
         if (m_initialBytesToStrip > frameLength)
-            throw LengthCodecException(fmt::format("Adjusted frame length ({}) is less than initialBytesToStrip: {}", frameLength, m_initialBytesToStrip));
+            throw LengthFieldDecoderException(fmt::format("Adjusted frame length ({}) is less than initialBytesToStrip: {}", frameLength, m_initialBytesToStrip));
 
         m_frameLengthInt = (int)frameLength;  // 确定新的帧有多长
         buf->Discard(m_initialBytesToStrip);
         return true;
     }
 
-    Buffer LengthCodec::Decode(Buffer* buf)
+    Buffer LengthFieldDecoder::Decode(Buffer* buf)
     {
         Buffer frame(m_frameLengthInt - m_initialBytesToStrip);
         frame.Append(buf->ReadIndex(), frame.Size());
@@ -2368,7 +2368,7 @@ namespace kurisu {
         return frame;
     }
 
-    int64_t LengthCodec::PeekBodyLength(Buffer* buf)
+    int64_t LengthFieldDecoder::PeekBodyLength(Buffer* buf)
     {
         int64_t bodyLen = -1;
         buf->ReadIndexRightShift(m_lengthFieldOffset);
@@ -2523,10 +2523,10 @@ namespace kurisu {
                     }
                 }
                 // 出问题直接打印然后强制断开连接
-                catch (LengthCodec::LengthCodecException& e)
+                catch (LengthFieldDecoder::LengthFieldDecoderException& e)
                 {
                     ForceCloseInLoop();
-                    LOG_WARN << fmt::format("TcpConnection::HandleRead[{}] forced to close for LengthCodecException: {}", Name(), e.what());
+                    LOG_WARN << fmt::format("TcpConnection::HandleRead[{}] forced to close for LengthFieldDecoderException: {}", Name(), e.what());
                 }
             }
             else
@@ -2757,7 +2757,7 @@ namespace kurisu {
         // 关闭回调函数,作用是将这个关闭的TcpConnection从map中删除
         conn->SetCloseCallback(std::bind(&TcpServer::RemoveConnection, this, std::placeholders::_1));
         conn->SetTcpNoDelay(m_isTcpNoDelay);
-        conn->SetLengthCodec(&m_decoder);
+        conn->SetLengthFieldDecoder(&m_decoder);
         if (m_heartbeatInterval > 0)
             ioLoop->AddHeartbeat(conn);
         // 没有在这里将连接加入ShutdownTimerWheel是因为不一定每条连接都需要被ShutdownTimerWheel接管
@@ -2788,12 +2788,12 @@ namespace kurisu {
         // 所以离开这个函数后就只剩1,然后执行完TcpConnection::ConnectDestroyed,对应的TcpConnection才真正析构
     }
     void TcpServer::SetHeartbeatMsg(const void* data, int len) { detail::HeartbeatTimingWheel::Msg::SetMsg(data, len); }
-    void TcpServer::SetLengthCodec(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
+    void TcpServer::SetLengthFieldDecoder(int maxFrameLength, int lengthFieldOffset, int lengthFieldLength, int lengthAdjustment, int initialBytesToStrip)
     {
         int len = lengthFieldLength;
         if (len != 1 && len != 2 && len != 4 && len != 8)
-            LOG_FATAL << "TcpServer::SetLengthCodec lengthFieldLength only supports 1/2/4/8";
-        m_decoder = LengthCodec(maxFrameLength, lengthFieldOffset, lengthFieldLength, lengthAdjustment, initialBytesToStrip);
+            LOG_FATAL << "TcpServer::SetLengthFieldDecoder lengthFieldLength only supports 1/2/4/8";
+        m_decoder = LengthFieldDecoder(maxFrameLength, lengthFieldOffset, lengthFieldLength, lengthAdjustment, initialBytesToStrip);
     }
 
 }  // namespace kurisu

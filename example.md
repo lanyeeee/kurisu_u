@@ -57,7 +57,7 @@ int main()
 }
 ```
 
-# 3.Echo Server with `LengthCodec`   
+# 3.Echo Server with `LengthFieldDecoder`   
 It's used much like [netty](https://github.com/netty/netty)'s `LengthFieldBasedFrameDecoder`   
 This ensures that every callback has a complete msg in the buffer
 ```cpp  
@@ -77,13 +77,13 @@ int main()
     server.SetMessageCallback(OnMsg);
 
     //very similar to  netty's LengthFieldBasedFrameDecoder
-    server.SetLengthCodec(65535, 0, 4, 0, 0);
+    server.SetLengthFieldDecoder(65535, 0, 4, 0, 0);
 
     server.Start();
     loop.Loop();
 }
 ```
-# 4.Echo Server with `LengthCodec` and `Heartbeat`   
+# 4.Echo Server with `LengthFieldDecoder` and `Heartbeat`   
 ```cpp
 #include <kurisu/kurisu.h>
 
@@ -101,7 +101,7 @@ int main()
     server.SetMessageCallback(OnMsg);
 
     //very similar to  netty's LengthFieldBasedFrameDecoder
-    server.SetLengthCodec(65535, 0, 4, 0, 0);
+    server.SetLengthFieldDecoder(65535, 0, 4, 0, 0);
 
     std::string msg = "heartbeat";
     //If you don't set it, the default msg is "\0\0\0\0",4 bytes total
@@ -113,7 +113,7 @@ int main()
 }
 
 ```  
-# 5.Echo server with `LengthCodec`,`Heartbeat`,`ShutdownTimingWheel`  
+# 5.Echo server with `LengthFieldDecoder`,`Heartbeat`,`ShutdownTimingWheel`  
 If a connection in **ShundownTimingWheel** does not send any msg within the `interval` you set, it will be **forcibly closed**
 ```cpp
 #include <kurisu/kurisu.h>
@@ -142,7 +142,7 @@ int main()
     server.SetConnectionCallback(OnConn);
 
     // very similar to  netty's LengthFieldBasedFrameDecoder
-    server.SetLengthCodec(65535, 0, 4, 0, 0);
+    server.SetLengthFieldDecoder(65535, 0, 4, 0, 0);
 
     std::string msg = "heartbeat";
     // If you don't set it, the default msg is "\0\0\0\0",4 bytes total
@@ -159,7 +159,7 @@ int main()
 
 
 
-# 6.`Multi-thread` Chat Server with  `LengthCodec`,`Heartbeat`,`ShutdownTimingWheel`
+# 6.`Multi-thread` Chat Server with  `LengthFieldDecoder`,`Heartbeat`,`ShutdownTimingWheel`
 ```cpp
 #include <kurisu/kurisu.h>
 #include <set>
@@ -172,7 +172,7 @@ public:
         using namespace std::placeholders;
 
         m_server.SetThreadNum(4);
-        m_server.SetLengthCodec(65535, 0, 4, 0, 0);
+        m_server.SetLengthFieldDecoder(65535, 0, 4, 0, 0);
 
         std::string msg = "heartbeat";
         m_server.SetHeartbeatMsg(msg.data(), (int)msg.size());
