@@ -951,6 +951,7 @@ namespace kurisu {
             itimerspec oldValue;
             bzero(&newValue, sizeof(newValue));
             bzero(&oldValue, sizeof(oldValue));
+
             newValue.it_value = HowMuchTimeFromNow(runtime);
 
             timerfd_settime(timerfd, 0, &newValue, &oldValue);
@@ -1410,11 +1411,11 @@ namespace kurisu {
             // 获取now之前的所有Timer
             TimeoutTimer timeout = GetTimeout(now);
             m_isRunningCallback = true;
+
             // 调用超时Timer的回调函数
             for (auto&& item : timeout)
                 item->Run();
             m_isRunningCallback = false;
-
             // 重置非一次性的Timer
             Reset(timeout);
         }
@@ -1446,14 +1447,15 @@ namespace kurisu {
                 m_timers.erase(it.Key());
             m_cancelledSoon.clear();
 
-            detail::ResetTimerfd(m_timerfd, m_timers.begin()->second->GetRuntime());
+            if (!m_timers.empty())
+                detail::ResetTimerfd(m_timerfd, m_timers.begin()->second->GetRuntime());
         }
         bool TimerQueue::Insert(detail::Timer* timer)
         {
             bool earliestChanged = false;
             Timestamp when = timer->GetRuntime();  // 取出timer的到期时间
 
-            // 如果set为空或此timer比set中最早的timer还早
+            // 如果map为空或此timer比map中最早的timer还早
             if (m_timers.empty() || when < m_timers.begin()->first.first)
                 earliestChanged = true;  // 就需要修改超时时间
 
