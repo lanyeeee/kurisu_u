@@ -57,7 +57,7 @@ int main()
 }
 ```
 
-# 3.Echo Server with `SetLengthFieldCodec`   
+# 3.Echo Server with `LengthFieldCodec`   
 It's used much like [netty](https://github.com/netty/netty)'s `LengthFieldBasedFrameDecoder`   
 This ensures that every callback has a complete msg in the buffer
 ```cpp  
@@ -94,7 +94,7 @@ int main()
 }
 ```
 
-# 4.`Multi-thread` Chat Server with  `SetLengthFieldCodec`
+# 4.`Multi-thread` Chat Server with  `LengthFieldCodec`
 ```cpp
 #include <kurisu/kurisu.h>
 #include <set>
