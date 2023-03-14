@@ -2680,48 +2680,51 @@ namespace kurisu {
     {
         try
         {
-            int64_t frameLength = 0;
+            while (buf->ReadableBytes())
+            {
+                int64_t frameLength = 0;
 
-            // 如果当前可读字节还未达到长度长度域的偏移，那肯定不完整
-            if ((int)buf->ReadableBytes() < m_lengthFieldEndOffset)
-                return;
+                // 如果当前可读字节还未达到长度长度域的偏移，那肯定不完整
+                if ((int)buf->ReadableBytes() < m_lengthFieldEndOffset)
+                    break;
 
-            // 拿到报文体长度
-            int64_t bodyLen = PeekBodyLength(buf);
+                // 拿到报文体长度
+                int64_t bodyLen = PeekBodyLength(buf);
 
-            // 如果报文体的长度为负数，直接抛出异常
-            if (bodyLen < 0)
-                throw Exception(fmt::format("negative pre-adjustment length field: {}", bodyLen));
+                // 如果报文体的长度为负数，直接抛出异常
+                if (bodyLen < 0)
+                    throw Exception(fmt::format("negative pre-adjustment length field: {}", bodyLen));
 
-            // 确定整个包的长度
-            frameLength = bodyLen + m_lengthAdjustment + m_lengthFieldEndOffset;
+                // 确定整个包的长度
+                frameLength = bodyLen + m_lengthAdjustment + m_lengthFieldEndOffset;
 
-            // 整个包的长度还没有长度域长，直接抛出异常
-            if (frameLength < m_lengthFieldEndOffset)
-                throw Exception(fmt::format("Adjusted frame length {} is less than lengthFieldEndOffset: {}", frameLength, m_lengthFieldEndOffset));
+                // 整个包的长度还没有长度域长，直接抛出异常
+                if (frameLength < m_lengthFieldEndOffset)
+                    throw Exception(fmt::format("Adjusted frame length {} is less than lengthFieldEndOffset: {}", frameLength, m_lengthFieldEndOffset));
 
-            // 数据包长度超出最大包长度
-            if (frameLength > m_maxFrameLength)
-                throw Exception(fmt::format("Adjusted frame length exceeds {}: {}", m_maxFrameLength, frameLength));
+                // 数据包长度超出最大包长度
+                if (frameLength > m_maxFrameLength)
+                    throw Exception(fmt::format("Adjusted frame length exceeds {}: {}", m_maxFrameLength, frameLength));
 
 
-            // 前面是长度的校验，顺便拿到了帧的长度
+                // 前面是长度的校验，顺便拿到了帧的长度
 
-            // 验证当前是否已经读到足够的字节
-            if ((int)buf->ReadableBytes() < frameLength)
-                return;
+                // 验证当前是否已经读到足够的字节
+                if ((int)buf->ReadableBytes() < frameLength)
+                    break;
 
-            // 跳过的字节不能大于数据包的长度
-            if (m_initialBytesToStrip > frameLength)
-                throw Exception(fmt::format("Adjusted frame length ({}) is less than initialBytesToStrip: {}", frameLength, m_initialBytesToStrip));
+                // 跳过的字节不能大于数据包的长度
+                if (m_initialBytesToStrip > frameLength)
+                    throw Exception(fmt::format("Adjusted frame length ({}) is less than initialBytesToStrip: {}", frameLength, m_initialBytesToStrip));
 
-            // 消息完整，跳过指定字节后执行回调
-            buf->Discard(m_initialBytesToStrip);
+                // 消息完整，跳过指定字节后执行回调
+                buf->Discard(m_initialBytesToStrip);
 
-            Buffer frame = buf->RetainedSlice(frameLength - m_initialBytesToStrip);
-            buf->Discard(frameLength - m_initialBytesToStrip);
+                Buffer frame = buf->RetainedSlice(frameLength - m_initialBytesToStrip);
+                buf->Discard(frameLength - m_initialBytesToStrip);
 
-            m_msgCallback(conn, &frame, timestamp);
+                m_msgCallback(conn, &frame, timestamp);
+            }
         }
         catch (Exception& e)
         {
