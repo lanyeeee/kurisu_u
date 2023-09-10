@@ -1056,7 +1056,7 @@ namespace kurisu {
         class Buf {
         public:
             char* ptr;
-            Buf(uint64_t len) : ptr(new char[len]) {}
+            Buf(uint64_t len) : ptr((char*)malloc(len)) {}
             // 尝试扩大原来的内存，不行就开辟一片新的内存，并且把原来的数据拷贝过去
             void Resize(uint64_t newSize) { ptr = (char*)realloc(ptr, newSize); }
             ~Buf() { delete[] ptr; }
