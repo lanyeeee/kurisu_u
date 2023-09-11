@@ -1601,8 +1601,8 @@ namespace kurisu {
         if (auto slash = file.rfind('/'); slash != std::string_view::npos)
         {
             file = file.substr(slash + 1);
-            m_fileName = file.data();
         }
+        m_fileName = file.data();
         m_fileNameSize = file.size();
 
         FormatTime();
